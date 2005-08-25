@@ -11,8 +11,9 @@ use Bio::DasLite::UserAgent;
 use HTTP::Request;
 
 our $DEBUG    = 0;
-our $VERSION  = '0.01';
+our $VERSION  = '0.02';
 our $BLK_SIZE = 4096;
+
 #########
 # $ATTR contains information about document structure - tags, attributes and subparts
 #
@@ -97,7 +98,7 @@ sub basename {
     push @res, $1 if($1);
   }
 
-  return ref($dsn)?\@res:$res[0];
+  return \@res;
 }
 
 sub dsn {
@@ -109,7 +110,7 @@ sub dsn {
       $self->{'dsn'} = [$dsn];
     }
   }
-  return (scalar @{$self->{'dsn'}} == 1)?@{$self->{'dsn'}}[0]:$self->{'dsn'};
+  return $self->{'dsn'};
 }
 
 #########
@@ -177,7 +178,7 @@ sub _generic_request {
   my ($self, $query, $fname, %opts) = @_;
   my $ref            = {};
   my $dsn            = $opts{'use_basename'}?$self->basename():$self->dsn();
-  my @bn             = ref($dsn)?@{$dsn}:$dsn;
+  my @bn             = @{$dsn};
   my $results        = {};
   my @queries        = ();
   my $reqname        = $fname;
@@ -225,7 +226,7 @@ sub _generic_request {
     }
   }
 
-  return (scalar keys %$results == 1)?(values %$results)[0]:$results;
+  return $results;
 }
 
 #########

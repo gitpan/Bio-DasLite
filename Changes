@@ -1,5 +1,12 @@
 Revision history for Perl extension Bio::DasLite.
 
+0.02  Following feedback, data structures returned by:
+      dsn, basename, dsns, entry_points, types, features, sequence
+      have now been homogenised across the board. Results are now
+      always hashed against the query which was made, regardless
+      of how many sources are configured.
+      Also added a few more tests including feature-by-id
+
 0.01  Fri Aug 19 16:38:05 2005
 	- original version; created by h2xs 1.23 with options
 		-cfn Bio::DasLite

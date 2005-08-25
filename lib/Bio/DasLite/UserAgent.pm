@@ -4,6 +4,8 @@ use LWP::Parallel::UserAgent;
 use vars qw(@ISA);
 @ISA = qw(LWP::Parallel::UserAgent);
 
+our $VERSION = '0.01';
+
 sub new {
   my ($class, %args) = @_;
   my $self = LWP::Parallel::UserAgent->new(%args);
