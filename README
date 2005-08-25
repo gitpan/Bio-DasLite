@@ -1,0 +1,34 @@
+Bio-DasLite version 0.01
+==========================
+
+Bio::DasLite is an implementation of the BioDas protocol, http://biodas.org/
+for the retrieval of biological data from XML sources over HTTP.
+
+Bio::DasLite is designed as a lightweight and more forgiving alternative to
+the client/retrieval/parsing components of Bio::Das. Bio::DasLite itself is
+not a drop-in replacement for Bio::Das but it can be subclassed to do so
+(and probably will in a short-term future release).
+
+INSTALLATION
+
+To install this module type the following:
+
+   perl Makefile.PL
+   make
+   make test
+   make install
+
+DEPENDENCIES
+
+This module requires these other modules and libraries:
+
+LWP::Parallel::UserAgent
+
+COPYRIGHT AND LICENCE
+
+Copyright (C) 2005 by Roger M Pettett, Genome Research Ltd.
+http://www.sanger.ac.uk/
+
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself, either Perl version 5.8.4 or,
+at your option, any later version of Perl 5 you may have available.
