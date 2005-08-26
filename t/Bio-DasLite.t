@@ -1,4 +1,4 @@
-use Test::More tests => 31;
+use Test::More tests => 39;
 use Bio::DasLite;
 
 {
@@ -61,10 +61,19 @@ use Bio::DasLite;
   my $req = "10:1,1000";
   for my $call (qw(entry_points types features sequence)) {
     my $res       = $das->$call($req);
-    ok(ref($res) eq "HASH",                 "entry_points returns a hash");
-    ok(scalar keys %$res == scalar @{$src}, "entry_points returns the same number of sources");
-    ok(ref((values %{$res})[0]) eq "ARRAY", "entry_points hash contains an array");
-    ok(scalar @{(values %{$res})[0]} > 0,   "entry_points returns some data");
+    ok(ref($res) eq "HASH",                 "$call returns a hash");
+    ok(scalar keys %$res == scalar @{$src}, "$call returns the same number of sources");
+    ok(ref((values %{$res})[0]) eq "ARRAY", "$call hash contains an array");
+    ok(scalar @{(values %{$res})[0]} > 0,   "$call returns some data");
+  }
+
+  $req = ["1:1,1000", "15:1,1000"];
+  for my $call (qw(features sequence)) {
+    my $res       = $das->$call($req);
+    ok(ref($res) eq "HASH",                    "$call returns a hash");
+    ok(scalar keys %$res == (@{$src}*@{$req}), "$call returns data to the tune of (number of sources * number of segments)");
+    ok(ref((values %{$res})[0]) eq "ARRAY",    "$call hash contains an array");
+    ok(scalar @{(values %{$res})[0]} > 0,      "$call returns some data");
   }
 
   my $sequence = $das->sequence("1:1,1000");

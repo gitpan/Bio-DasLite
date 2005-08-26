@@ -14,7 +14,6 @@ push @sources, "http://das.sanger.ac.uk/das/spectral35";
 
 my $das = Bio::DasLite->new({
 			       'timeout'    => 30,
-			       'http_proxy' => "http://webcache.sanger.ac.uk:3128/",
 			       'dsn'        => \@sources,
 			      });
 print "\n", "*"x80, "\n", Dumper $das->dsns();

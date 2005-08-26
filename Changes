@@ -1,5 +1,11 @@
 Revision history for Perl extension Bio::DasLite.
 
+0.03  Allowed for calls (namely 'features') with an arrayref of
+      segments, i.e. $das->features(["1:1,1000", "2:1,1000"]);
+      Minor modifications following some benchmarking and profiling.
+      Results are now cached (per Bio::DasLite instance) against
+      query URL by default.
+
 0.02  Following feedback, data structures returned by:
       dsn, basename, dsns, entry_points, types, features, sequence
       have now been homogenised across the board. Results are now

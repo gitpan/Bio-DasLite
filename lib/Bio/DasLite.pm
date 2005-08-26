@@ -11,36 +11,48 @@ use Bio::DasLite::UserAgent;
 use HTTP::Request;
 
 our $DEBUG    = 0;
-our $VERSION  = '0.02';
-our $BLK_SIZE = 4096;
+our $VERSION  = '0.03';
+our $BLK_SIZE = 8192;
 
 #########
 # $ATTR contains information about document structure - tags, attributes and subparts
+# This is split up by call to reduce the number of tag passes for each response
 #
 our $ATTR     = {
-		 'feature'      => [qw(id label)],
-		 'method'       => [qw(id)],
-		 'type'         => [qw(id category reference subparts superparts)],
-		 'target'       => [qw(id start stop)],
-		 'start'        => [],
-		 'end'          => [],
-		 'orientation'  => [],
-		 'note'         => [],
-		 'phase'        => [],
-		 'score'        => [],
-		 'sequence'     => [qw(id start stop moltype version)],
-		 'entry_points' => [qw(href version)],
-		 'dsn'          => [],
-		 'source'       => [qw(id)],
-		 'mapmaster'    => [],
-		 'description'  => [],
-		 'group'        => {
-				    'group'   => [qw(id label type)],
-				    'note'    => [],
-				    'target'  => [qw(id start stop)],
+		 'feature'      => {
+				    'feature'      => [qw(id label)],
+				    'method'       => [qw(id)],
+				    'type'         => [qw(id category reference subparts superparts)],
+				    'target'       => [qw(id start stop)],
+				    'start'        => [],
+				    'end'          => [],
+				    'orientation'  => [],
+				    'note'         => [],
+				    'phase'        => [],
+				    'score'        => [],
+				    #'link'         => [qw(href)],
+				    'group'        => {
+						       #'link'    => [qw(href)],
+						       'group'   => [qw(id label type)],
+						       'note'    => [],
+						       'target'  => [qw(id start stop)],
+						      },
+			           },
+		 'sequence'     => {
+				    'sequence'     => [qw(id start stop moltype version)],
 				   },
-		 'segment'      => {
-				    'segment' => [qw(id start stop type orientation size subparts)],
+		 'entry_points' => {
+				    'entry_points' => [qw(href version)],
+				    'segment'      => [qw(id start stop type orientation size subparts)],
+				   },
+		 'dsn'          => {
+				    'dsn'          => [],
+				    'source'       => [qw(id)],
+				    'mapmaster'    => [],
+				    'description'  => [],
+				   },
+		 'type'         => {
+				    'segment'      => [qw(id start stop type orientation size subparts)],
 				   },
 		};
 
@@ -64,12 +76,13 @@ sub new {
 	      'dsn'     => [],
 	      'timeout' => 5,
 	      'data'    => {},
+	      'caching' => 1,
 	     };
 
   bless $self, $class;
 
-  for my $arg (qw(dsn timeout http_proxy)) {
-    $self->$arg($ref->{$arg}) if($ref->{$arg} && $self->can($arg));
+  for my $arg (qw(dsn timeout http_proxy caching)) {
+    $self->$arg($ref->{$arg}) if(defined $ref->{$arg} && $self->can($arg));
   }
 
   return $self;
@@ -82,9 +95,15 @@ sub http_proxy {
 }
 
 sub timeout {
-  my ($self, $proxy) = @_;
-  $self->{'timeout'} = $proxy if($proxy);
+  my ($self, $timeout) = @_;
+  $self->{'timeout'} = $timeout if($timeout);
   return $self->{'timeout'};
+}
+
+sub caching {
+  my ($self, $caching) = @_;
+  $self->{'caching'}   = $caching if(defined $caching);
+  return $self->{'caching'};
 }
 
 sub basename {
@@ -184,17 +203,21 @@ sub _generic_request {
   my $reqname        = $fname;
   $reqname           =~ s/[\(\)]//g;
   ($fname)           = $fname =~ /^([a-z_]+)/;
+  my $attr           = $ATTR->{$fname};
 
   if($query) {
     if(ref($query) eq "HASH") {
       push @queries, join(";", map { "$_=$query->{$_}" } grep { $query->{$_} } @{$OPTS->{$fname}});
 
     } elsif(ref($query) eq "ARRAY") {
-      push @queries, map {
-	my $q = $_;
-	join(";", map { "$_=$q->{$_}" } grep { $q->{$_} } @{$OPTS->{$fname}});
-      } @{$query};
-
+      if(ref($query->[0]) eq "HASH") {
+	push @queries, map {
+	  my $q = $_;
+	  join(";", map { "$_=$q->{$_}" } grep { $q->{$_} } @{$OPTS->{$fname}});
+	} @{$query};
+      } else {
+	push @queries, map { "segment=$_"; } @{$query};
+      }
     } else {
       push @queries, "segment=$query";
     }
@@ -204,11 +227,19 @@ sub _generic_request {
 
   for my $bn (@bn) {
     for my $request (map { "$bn/$reqname?$_" } @queries) {
+      if($self->{'caching'} && $self->{'_cache'}->{$request}) {
+	#########
+	# the key has to be present, but the '0' callback will be ignored by _fetch
+	#
+	$results->{$request} = 0;
+	next;
+      }
+
       $results->{$request} = [];
       $ref->{$request} = sub {
 	my $data                     = shift;
 	$self->{'data'}->{$request} .= $data;
-	$self->{'data'}->{$request}  =~ s!(<$fname.*?/$fname>|<$fname[^>]+/>)!&_parse_branch($self, $request, $results->{$request}, $ATTR, $1)!smieg;
+	$self->{'data'}->{$request}  =~ s!(<$fname.*?/$fname>|<$fname[^>]+/>)!&_parse_branch($self, $request, $results->{$request}, $attr, $1)!smieg;
 	return;
       };
     }
@@ -226,6 +257,17 @@ sub _generic_request {
     }
   }
 
+  #########
+  # deal with caching
+  #
+  if($self->{'caching'}) {
+    for my $s (keys %$results) {
+      $DEBUG and print STDERR qq(CACHE HIT for $s\n) if(!$results->{$s});
+      $results->{$s}          ||= $self->{'_cache'}->{$s};
+      $self->{'_cache'}->{$s} ||= $results->{$s};
+    }
+  }
+
   return $results;
 }
 
@@ -236,18 +278,17 @@ sub _generic_request {
 sub _fetch {
   my ($self, $url_ref) = @_;
   $self->{'ua'}      ||= Bio::DasLite::UserAgent->new(
-							'proxy' => $self->http_proxy() || $ENV{'http_proxy'},
-						       );
+						      'proxy' => $self->http_proxy(),
+						     );
   $self->{'ua'}->initialize();
 
   for my $url (keys %$url_ref) {
+    next unless(ref($url_ref->{$url}) eq "CODE");
     $DEBUG and print STDERR qq(Building HTTP::Request for $url [timeout=$self->{'timeout'}]\n);
-    my $req = HTTP::Request->new(GET => $url);
-    $self->{'ua'}->register($req, $url_ref->{$url}, $BLK_SIZE);
+    $self->{'ua'}->register(HTTP::Request->new(GET => $url), $url_ref->{$url}, $BLK_SIZE);
   }
-  $self->{'ua'}->wait($self->{'timeout'})
+  $self->{'ua'}->wait($self->{'timeout'});
 }
-
 
 #########
 # Using the $attr structure describing the structure of this branch,
@@ -257,10 +298,18 @@ sub _parse_branch {
   my ($self, $dsn, $ar_ref, $attr, $blk) = @_;
   my $ref = {};
 
+  my (@parts, @subparts);
+  while(my ($k, $v) = each %$attr) {
+    if(ref($v) eq "HASH") {
+      push @subparts, $k;
+    } else {
+      push @parts, $k;
+    }
+  }
+
   #########
   # handle groups
   #
-  my @subparts = grep { ref($attr->{$_}) eq "HASH" } keys %$attr;
   for my $subpart (@subparts) {
     my $subpart_ref  = [];
     $blk             =~ s!(<$subpart[^/]+/>|<$subpart[^/]+>.*?/$subpart>)!&_parse_branch($self, $dsn, $subpart_ref, $attr->{$subpart}, $1)!smieg;
@@ -272,25 +321,12 @@ sub _parse_branch {
     #
   }
 
-  $self->_parse_twig($ref, $blk, $attr);
-
-  push @{$ar_ref}, $ref;
-  return "";
-}
-
-#########
-# strip out tags and tag-attributes
-#
-sub _parse_twig {
-  my ($self, $ref, $blk, $attrs) = @_;
-
   my $tmp;
 
-  for my $tag (keys %{$attrs}) {
-    my $attr = $attrs->{$tag}||[];
-    next if(ref($attr) eq "HASH"); # don't process subparts here
+  for my $tag (@parts) {
+    my $opts = $attr->{$tag}||[];
 
-    for my $a (@{$attr}) {
+    for my $a (@{$opts}) {
       ($tmp)              = $blk =~ m|<$tag[^>]+$a="([^"]+)"|smi;
       $ref->{"${tag}_$a"} = $tmp if($tmp);
     }
@@ -309,7 +345,11 @@ sub _parse_twig {
 										 'txt'  => $2,
 										};
 						       }!smieg;
+
+  push @{$ar_ref}, $ref;
+  return "";
 }
+
 
 1;
 __END__
@@ -331,7 +371,7 @@ Bio::DasLite - Perl extension for the DAS (HTTP+XML) Protocol (http://biodas.org
   $das->dsn("http://das.ensembl.org/das/ensembl1834/"); # give dsn (scalar or arrayref) here if not specified in new()
 
   #########
-  # Retrieve other sources from the same service (returns Bio::DasLite objects)
+  # Retrieve other sources from the same service
   #
   my $src_data      = $das->dsns();
 
@@ -354,12 +394,13 @@ Bio::DasLite - Perl extension for the DAS (HTTP+XML) Protocol (http://biodas.org
   # Different ways to fetch features -
   #
   my $feature_data1 = $das->features("1:1,100000");
-  my $feature_data2 = $das->features({
+  my $feature_data2 = $das->features(["1:1,100000", "2:20435000,21435000"]);
+  my $feature_data3 = $das->features({
                                       'segment' => "1:1,1000",
                                       'type'    => "karyotype",
                                       # optional args - see DAS Spec
                                      });
-  my $feature_data3 = $das->features([
+  my $feature_data4 = $das->features([
                                       {'segment' => "1:1,1000000",'type' => 'karyotype',},
                                       {'segment' => "2:1,1000000",},
                                      ]);

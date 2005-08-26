@@ -1,4 +1,4 @@
-Bio-DasLite version 0.02
+Bio-DasLite version 0.03
 ==========================
 
 Bio::DasLite is an implementation of the BioDas protocol, http://biodas.org/
@@ -8,6 +8,12 @@ Bio::DasLite is designed as a lightweight and more forgiving alternative to
 the client/retrieval/parsing components of Bio::Das. Bio::DasLite itself is
 not a drop-in replacement for Bio::Das but it can be subclassed to do so
 (and probably will in a short-term future release).
+
+NOTE
+Results are returned hashed against the query URL which caused them.
+This means that sometimes you receive more results than you might expect
+(number of sources * number of segments)
+
 
 INSTALLATION
 
