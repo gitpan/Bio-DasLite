@@ -1,5 +1,11 @@
 Revision history for Perl extension Bio::DasLite.
 
+0.05  Stylesheet support. Seems to tickle some perl regex/stack bugs
+      on certain platforms (x86 Linux, Alpha Tru64). It works fine on my G4.
+
+0.04  Internal version. Added duplication of segment data across
+      features in the 'features' call.
+
 0.03  Allowed for calls (namely 'features') with an arrayref of
       segments, i.e. $das->features(["1:1,1000", "2:1,1000"]);
       Minor modifications following some benchmarking and profiling.

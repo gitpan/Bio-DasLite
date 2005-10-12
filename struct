@@ -1,0 +1,62 @@
+		 'stylesheet'   => {
+				    'stylesheet' => [qw(version)],
+				    'category'   => {
+						     'category' => [qw(id)],
+						     'type'     => {
+								    'type'  => [qw(id)],
+								    'glyph' => {
+										'glyph' => [],
+										'arrow'          => {
+												     'height'  => [],
+												     'fgcolor' => [],
+												     'bgcolor' => [],
+												     'label'   => [],
+												     'bump'    => [],
+												     'parallel' => [],
+												    },
+										'anchored_arrow' => {
+												     'height'  => [],
+												     'fgcolor' => [],
+												     'bgcolor' => [],
+												     'label'   => [],
+												     'bump'    => [],
+												     'parallel' => [],
+												    },
+										'box'            => {
+												     'height'  => [],
+												     'fgcolor' => [],
+												     'bgcolor' => [],
+												     'label'   => [],
+												     'bump'    => [],
+												     'linewidth' => [],
+												    },
+										'cross'          => {%common_style_attrs,},
+										'dot'            => {%common_style_attrs,},
+										'ex'             => {%common_style_attrs,},
+										'hidden'         => {%common_style_attrs,},
+										'line'           => {
+												     %common_style_attrs,
+												     'style'     => [],
+												    },
+										'span'           => {%common_style_attrs,},
+										'text'           => {
+												     %common_style_attrs,
+												     'font'     => [],
+												     'fontsize' => [],
+												     'string'   => [],
+												     'style'    => [],
+												    },
+										'primers'        => {%common_style_attrs,},
+										'toomany'        => {
+												     %common_style_attrs,
+												     'linewidth' => [],
+												    },
+										'triangle'       => {
+												     %common_style_attrs,
+												     'linewidth' => [],
+												     'direction' => [],
+												    },
+									       },
+								   },
+						    },
+				   },

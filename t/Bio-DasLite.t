@@ -1,5 +1,6 @@
-use Test::More tests => 39;
+use Test::More tests => 40;
 use Bio::DasLite;
+$Bio::DasLite::DEBUG = 0;
 
 {
   my $das = Bio::DasLite->new();
@@ -94,4 +95,12 @@ use Bio::DasLite;
   my $key      = (keys %{$f_by_id})[0];
   ok(scalar @{$f_by_id->{$key}} <= 1,      "feature-by=id returned one or no elements");
   ok(ref($f_by_id->{$key}->[0]) eq "HASH", "feature-by-id element was a hash");
+}
+
+{
+  my $das      = Bio::DasLite->new({
+				    'dsn'     => 'http://das.sanger.ac.uk/das/decipher',
+				    'timeout' => 30,
+				   });
+  ok($das->stylesheet());
 }

@@ -11,14 +11,24 @@ use Bio::DasLite::UserAgent;
 use HTTP::Request;
 
 our $DEBUG    = 0;
-our $VERSION  = '0.03';
+our $VERSION  = '0.05';
 our $BLK_SIZE = 8192;
 
 #########
 # $ATTR contains information about document structure - tags, attributes and subparts
 # This is split up by call to reduce the number of tag passes for each response
 #
+our %common_style_attrs = (
+			   'height'  => [],
+			   'fgcolor' => [],
+			   'bgcolor' => [],
+			   'label'   => [],
+			   'bump'    => [],
+			  );
 our $ATTR     = {
+		 '_segment'     => {
+				    'segment'      => [qw(id start stop version label)],
+				   },
 		 'feature'      => {
 				    'feature'      => [qw(id label)],
 				    'method'       => [qw(id)],
@@ -54,6 +64,57 @@ our $ATTR     = {
 		 'type'         => {
 				    'segment'      => [qw(id start stop type orientation size subparts)],
 				   },
+		 'stylesheet'   => {
+				    'stylesheet' => [qw(version)],
+				    'category'   => {
+						     'category' => [qw(id)],
+						     'type'     => {
+								    'type'  => [qw(id)],
+								    'glyph' => {
+										'arrow'          => {
+												     %common_style_attrs,
+												     'parallel' => [],
+												    },
+										'anchored_arrow' => {
+												     %common_style_attrs,
+												     'parallel' => [],
+												    },
+										'box'            => {
+												     %common_style_attrs,
+												     'linewidth' => [],
+												    },
+										'farrow'          => {%common_style_attrs,},
+										'rarrow'          => {%common_style_attrs,},
+										'cross'           => {%common_style_attrs,},
+										'dot'             => {%common_style_attrs,},
+										'ex'              => {%common_style_attrs,},
+										'hidden'          => {%common_style_attrs,},
+										'line'            => {
+												      %common_style_attrs,
+												      'style'     => [],
+												     },
+										'span'            => {%common_style_attrs,},
+										'text'            => {
+												      %common_style_attrs,
+												      'font'     => [],
+												      'fontsize' => [],
+												      'string'   => [],
+												      'style'    => [],
+												     },
+										'primers'        => {%common_style_attrs,},
+										'toomany'        => {
+												     %common_style_attrs,
+												     'linewidth' => [],
+												    },
+										'triangle'       => {
+												     %common_style_attrs,
+												     'linewidth' => [],
+												     'direction' => [],
+												    },
+									       },
+								   },
+						    },
+				   },
 		};
 
 #########
@@ -65,6 +126,7 @@ our $OPTS = {
 	     'sequence'     => [qw(segment)],
 	     'entry_points' => [],
 	     'dsn'          => [],
+	     'stylesheet'   => [],
 	    };
 
 #########
@@ -187,6 +249,14 @@ sub sequence {
 }
 
 #########
+# Retrieve stylesheet
+#
+sub stylesheet {
+  my ($self) = @_;
+  return $self->_generic_request(undef, 'stylesheet');
+}
+
+#########
 # Private methods
 #
 
@@ -239,17 +309,28 @@ sub _generic_request {
       $ref->{$request} = sub {
 	my $data                     = shift;
 	$self->{'data'}->{$request} .= $data;
-	$self->{'data'}->{$request}  =~ s!(<$fname.*?/$fname>|<$fname[^>]+/>)!&_parse_branch($self, $request, $results->{$request}, $attr, $1)!smieg;
+
+	unless($self->{'currentsegs'}->{$request}) {
+	  $self->{'currentsegs'}->{$request} = [];
+	  $data   =~ s/(<segment[^>]+?>)/&_parse_branch($self, $request, $self->{'currentsegs'}->{$request}, $ATTR->{'_segment'}, $1, 0)/smieg;
+	}
+
+	$DEBUG and print STDERR qq(invoking _parse_branch for $fname\n);
+	$self->{'data'}->{$request}  =~ s!(<$fname.*?/$fname>|<$fname[^>]+/>)!&_parse_branch($self, $request, $results->{$request}, $attr, $1, 1)!smieg;
+	$DEBUG and print STDERR qq(completed _parse_branch\n);
 	return;
       };
     }
   }
+
   $self->_fetch($ref);
+  $DEBUG and print STDERR qq(Content retrieved\n);
 
   #########
   # postprocessing (hack!)
   #
   if($fname eq "entry_points") {
+    $DEBUG and print STDERR qq(Running postprocessing for entry_points\n);
     for my $s (keys %$results) {
       for my $r (@{$results->{$s}}) {
 	delete $r->{'entry_points'};
@@ -261,6 +342,7 @@ sub _generic_request {
   # deal with caching
   #
   if($self->{'caching'}) {
+    $DEBUG and print STDERR qq(Performing cache handling\n);
     for my $s (keys %$results) {
       $DEBUG and print STDERR qq(CACHE HIT for $s\n) if(!$results->{$s});
       $results->{$s}          ||= $self->{'_cache'}->{$s};
@@ -278,7 +360,7 @@ sub _generic_request {
 sub _fetch {
   my ($self, $url_ref) = @_;
   $self->{'ua'}      ||= Bio::DasLite::UserAgent->new(
-						      'proxy' => $self->http_proxy(),
+						      'http_proxy' => $self->http_proxy(),
 						     );
   $self->{'ua'}->initialize();
 
@@ -287,6 +369,7 @@ sub _fetch {
     $DEBUG and print STDERR qq(Building HTTP::Request for $url [timeout=$self->{'timeout'}]\n);
     $self->{'ua'}->register(HTTP::Request->new(GET => $url), $url_ref->{$url}, $BLK_SIZE);
   }
+  $DEBUG and print STDERR qq(Requests submitted. Waiting for content\n);
   $self->{'ua'}->wait($self->{'timeout'});
 }
 
@@ -295,7 +378,15 @@ sub _fetch {
 # recursively parse the XML blocks and build the corresponding response data structure
 #
 sub _parse_branch {
-  my ($self, $dsn, $ar_ref, $attr, $blk) = @_;
+  my ($self, $dsn, $ar_ref, $attr, $blk, $addseginfo, $depth) = @_;
+  $depth ||= 0;
+
+  if($DEBUG) {
+    print STDERR " "x($depth*2), qq(begin _parse_branch:\n);
+    print STDERR " "x($depth*2), qq(  ar_ref = $ar_ref\n);
+    print STDERR " "x($depth*2), qq(  attr   = $attr\n);
+    print STDERR " "x($depth*2), qq(  block  = $blk\n);
+  }
   my $ref = {};
 
   my (@parts, @subparts);
@@ -312,7 +403,7 @@ sub _parse_branch {
   #
   for my $subpart (@subparts) {
     my $subpart_ref  = [];
-    $blk             =~ s!(<$subpart[^/]+/>|<$subpart[^/]+>.*?/$subpart>)!&_parse_branch($self, $dsn, $subpart_ref, $attr->{$subpart}, $1)!smieg;
+    $blk             =~ s!(<$subpart[^/]+/>|<$subpart[^/]+>.*?/$subpart>)!&_parse_branch($self, $dsn, $subpart_ref, $attr->{$subpart}, $1, 0, $depth+1)!smieg;
     $ref->{$subpart} = $subpart_ref if(scalar @{$subpart_ref});
 
     #########
@@ -326,27 +417,44 @@ sub _parse_branch {
   for my $tag (@parts) {
     my $opts = $attr->{$tag}||[];
 
+    $DEBUG and print STDERR qq(About to process opts for '$tag' in block $blk\n);
     for my $a (@{$opts}) {
-      ($tmp)              = $blk =~ m|<$tag[^>]+$a="([^"]+)"|smi;
+      $DEBUG and print STDERR qq(  processing opt $a\n);
+      ($tmp)              = $blk =~ m|<$tag[^>]+$a="([^"]+?)"|smi;
+      $DEBUG and print STDERR qq(  processed opt $a\n);
       $ref->{"${tag}_$a"} = $tmp if($tmp);
+      $DEBUG and print STDERR " "x($depth*2), qq($tag $a = $tmp\n) if($tmp);
     }
+    $DEBUG and print STDERR qq(Done processing opts for $tag\n);
 
-    ($tmp)       = $blk =~ m|<$tag[^>]*>([^<]+)</$tag|smi;
+    ($tmp)       = $blk =~ m|<$tag[^>]*>([^<]+)</$tag>|smi;
+    $tmp       ||= "";
+    $tmp         =~ s/^\s+$//smg;
     $ref->{$tag} = $tmp if($tmp);
+    $DEBUG and print STDERR " "x($depth*2), qq(  $tag = $tmp\n) if($tmp);
   }
 
   #########
   # handle multiples of twig elements here
   #
-  $blk =~ s!<link\s+href="([^"]+)"[^>]*?>([^<]+)</link!{
+  $blk =~ s!<link\s+href="([^"]+)"[^>]*?>([^<]+)</link>!{
                                                         $ref->{'link'} ||= [];
 							push @{$ref->{'link'}}, {
 										 'href' => $1,
 										 'txt'  => $2,
 										};
-						       }!smieg;
+							""
+						       }!smegi;
+
+  if($addseginfo && $self->{'currentsegs'}->{$dsn} && @{$self->{'currentsegs'}->{$dsn}}) {
+    while(my ($k, $v) = each %{$self->{'currentsegs'}->{$dsn}->[0]}) {
+      $ref->{$k} = $v;
+    }
+  }
 
   push @{$ar_ref}, $ref;
+  $DEBUG and print STDERR " "x($depth*2), qq(leaving _parse_branch\n);
+
   return "";
 }
 
@@ -363,10 +471,10 @@ Bio::DasLite - Perl extension for the DAS (HTTP+XML) Protocol (http://biodas.org
   use Bio::DasLite;
 
   my $das = Bio::DasLite->new({
-			         'timeout'    => 60,                                       # optional timeout in seconds
-                                 'dsn'        => "http://das.ensembl.org/das/ensembl1834", # optional DSN (scalar, or arrayref)
-                                 'http_proxy' => "http://webcache.local.com:3128",         # optional http proxy
-			        });
+			       'timeout'    => 60,                                       # optional timeout in seconds
+                               'dsn'        => "http://das.ensembl.org/das/ensembl1834", # optional DSN (scalar, or arrayref)
+                               'http_proxy' => "http://webcache.local.com:3128",         # optional http proxy
+			      });
 
   $das->dsn("http://das.ensembl.org/das/ensembl1834/"); # give dsn (scalar or arrayref) here if not specified in new()
 
@@ -418,6 +526,11 @@ ProServer (A DAS Server implementation) at:
    http://www.sanger.ac.uk/proserver/
 
 The venerable Bio::Das suite (CPAN and http://www.biodas.org/download/Bio::Das/).
+
+=head1 KNOWN BUGS
+
+On certain platforms the 'stylesheet' request segfaults complaining about free()ing an invalid pointer.
+e.g. it works find on my Mac, but not on Linux or Alpha (various perl versions).
 
 =head1 AUTHOR
 

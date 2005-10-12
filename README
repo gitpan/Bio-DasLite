@@ -1,5 +1,5 @@
-Bio-DasLite version 0.03
-==========================
+Bio-DasLite version 0.05
+========================
 
 Bio::DasLite is an implementation of the BioDas protocol, http://biodas.org/
 for the retrieval of biological data from XML sources over HTTP.
@@ -29,6 +29,11 @@ DEPENDENCIES
 This module requires these other modules and libraries:
 
 LWP::Parallel::UserAgent
+
+KNOWN PROBLEMS
+
+The new stylesheet support seems to crash on some platforms -
+the recursive regex code seems to tickle some sort of free()/stack/regex bug.
 
 COPYRIGHT AND LICENCE
 
