@@ -3,7 +3,7 @@ package Bio::DasLite;
 # Author:        rmp@sanger.ac.uk
 # Maintainer:    rmp@sanger.ac.uk
 # Created:       2005-08-23
-# Last Modified: 2005-08-25
+# Last Modified: 2005-10-12
 #
 use strict;
 use warnings;
@@ -11,7 +11,7 @@ use Bio::DasLite::UserAgent;
 use HTTP::Request;
 
 our $DEBUG    = 0;
-our $VERSION  = '0.05';
+our $VERSION  = '0.06';
 our $BLK_SIZE = 8192;
 
 #########
@@ -143,7 +143,7 @@ sub new {
 
   bless $self, $class;
 
-  for my $arg (qw(dsn timeout http_proxy caching)) {
+  for my $arg (qw(dsn timeout http_proxy caching callback)) {
     $self->$arg($ref->{$arg}) if(defined $ref->{$arg} && $self->can($arg));
   }
 
@@ -158,7 +158,7 @@ sub http_proxy {
 
 sub timeout {
   my ($self, $timeout) = @_;
-  $self->{'timeout'} = $timeout if($timeout);
+  $self->{'timeout'}   = $timeout if($timeout);
   return $self->{'timeout'};
 }
 
@@ -166,6 +166,12 @@ sub caching {
   my ($self, $caching) = @_;
   $self->{'caching'}   = $caching if(defined $caching);
   return $self->{'caching'};
+}
+
+sub callback {
+  my ($self, $callback) = @_;
+  $self->{'callback'}   = $callback if($callback);
+  return $self->{'callback'};
 }
 
 sub basename {
@@ -235,7 +241,8 @@ sub types {
 # e.g. clones on a chromosome
 #
 sub features {
-  my ($self, $query) = @_;
+  my ($self, $query, $callback) = @_;
+  $self->{'callback'}           = $callback if($callback);
   return $self->_generic_request($query, 'feature(s)');
 }
 
@@ -252,7 +259,8 @@ sub sequence {
 # Retrieve stylesheet
 #
 sub stylesheet {
-  my ($self) = @_;
+  my ($self, $callback) = @_;
+  $self->{'callback'}   = $callback if($callback);
   return $self->_generic_request(undef, 'stylesheet');
 }
 
@@ -278,8 +286,14 @@ sub _generic_request {
   if($query) {
     if(ref($query) eq "HASH") {
       push @queries, join(";", map { "$_=$query->{$_}" } grep { $query->{$_} } @{$OPTS->{$fname}});
+#      $self->{'callback'} = $query->{'callback'} if($query->{'callback'});
 
     } elsif(ref($query) eq "ARRAY") {
+      if(ref($query->[-1]) eq "CODE") {
+	$self->callback($query->[-1]);
+	pop @{$query};
+      }
+
       if(ref($query->[0]) eq "HASH") {
 	push @queries, map {
 	  my $q = $_;
@@ -312,11 +326,17 @@ sub _generic_request {
 
 	unless($self->{'currentsegs'}->{$request}) {
 	  $self->{'currentsegs'}->{$request} = [];
-	  $data   =~ s/(<segment[^>]+?>)/&_parse_branch($self, $request, $self->{'currentsegs'}->{$request}, $ATTR->{'_segment'}, $1, 0)/smieg;
+	  $data   =~ s/(<segment[^>]+?>)/&_parse_branch($self, $request, $self->{'currentsegs'}->{$request}, $ATTR->{'_segment'}, $1, 0)/smegi;
 	}
 
 	$DEBUG and print STDERR qq(invoking _parse_branch for $fname\n);
-	$self->{'data'}->{$request}  =~ s!(<$fname.*?/$fname>|<$fname[^>]+/>)!&_parse_branch($self, $request, $results->{$request}, $attr, $1, 1)!smieg;
+
+	my $pat = qr!(<$fname.*?/$fname>|<$fname[^>]+/>)!smi;              
+	while($self->{'data'}->{$request} =~ /$pat/) {
+	  &_parse_branch($self, $request, $results->{$request}, $attr, $1, 1);
+	  $self->{'data'}->{$request}     =~ s/$pat//;
+	}
+
 	$DEBUG and print STDERR qq(completed _parse_branch\n);
 	return;
       };
@@ -381,12 +401,6 @@ sub _parse_branch {
   my ($self, $dsn, $ar_ref, $attr, $blk, $addseginfo, $depth) = @_;
   $depth ||= 0;
 
-  if($DEBUG) {
-    print STDERR " "x($depth*2), qq(begin _parse_branch:\n);
-    print STDERR " "x($depth*2), qq(  ar_ref = $ar_ref\n);
-    print STDERR " "x($depth*2), qq(  attr   = $attr\n);
-    print STDERR " "x($depth*2), qq(  block  = $blk\n);
-  }
   my $ref = {};
 
   my (@parts, @subparts);
@@ -403,7 +417,13 @@ sub _parse_branch {
   #
   for my $subpart (@subparts) {
     my $subpart_ref  = [];
-    $blk             =~ s!(<$subpart[^/]+/>|<$subpart[^/]+>.*?/$subpart>)!&_parse_branch($self, $dsn, $subpart_ref, $attr->{$subpart}, $1, 0, $depth+1)!smieg;
+
+    my $pat = qr!(<$subpart[^/]+/>|<$subpart[^/]+>.*?/$subpart>)!smi;              
+    while($blk =~ /$pat/) {
+      &_parse_branch($self, $dsn, $subpart_ref, $attr->{$subpart}, $1, 0, $depth+1);
+      $blk     =~ s/$pat//;
+    }
+
     $ref->{$subpart} = $subpart_ref if(scalar @{$subpart_ref});
 
     #########
@@ -417,15 +437,10 @@ sub _parse_branch {
   for my $tag (@parts) {
     my $opts = $attr->{$tag}||[];
 
-    $DEBUG and print STDERR qq(About to process opts for '$tag' in block $blk\n);
     for my $a (@{$opts}) {
-      $DEBUG and print STDERR qq(  processing opt $a\n);
       ($tmp)              = $blk =~ m|<$tag[^>]+$a="([^"]+?)"|smi;
-      $DEBUG and print STDERR qq(  processed opt $a\n);
       $ref->{"${tag}_$a"} = $tmp if($tmp);
-      $DEBUG and print STDERR " "x($depth*2), qq($tag $a = $tmp\n) if($tmp);
     }
-    $DEBUG and print STDERR qq(Done processing opts for $tag\n);
 
     ($tmp)       = $blk =~ m|<$tag[^>]*>([^<]+)</$tag>|smi;
     $tmp       ||= "";
@@ -454,6 +469,16 @@ sub _parse_branch {
 
   push @{$ar_ref}, $ref;
   $DEBUG and print STDERR " "x($depth*2), qq(leaving _parse_branch\n);
+
+  #########
+  # only perform callbacks if we're at recursion depth zero
+  #
+  if($depth == 0 && $self->{'callback'}) {
+    $DEBUG and print STDERR " "x($depth*2), qq(executing callback at depth $depth\n);
+    $ref->{'dsn'} = $dsn;
+    my $callback = $self->{'callback'};
+    &$callback($ref);
+  }
 
   return "";
 }
@@ -512,6 +537,30 @@ Bio::DasLite - Perl extension for the DAS (HTTP+XML) Protocol (http://biodas.org
                                       {'segment' => "1:1,1000000",'type' => 'karyotype',},
                                       {'segment' => "2:1,1000000",},
                                      ]);
+
+  #########
+  # Feature fetch with callback
+  #
+  my $callback = sub {
+		my $struct = shift;
+	        print STDERR Dumper($struct);
+	       };
+  # then:
+  $das->callback($callback);
+  $das->features("1:1,1000000");
+
+  # or:
+  $das->features("1:1,1000000", $callback);
+
+  # or:
+  $das->features(["1:1,1000000", "2:1,1000000", "3:1,1000000"], $callback);
+
+  #########
+  # Fetch a stylesheet structure
+  #
+  my $style_data    = $das->stylesheet();
+
+  my $style_data2   = $das->stylesheet($callback);
 
 =head1 DESCRIPTION
 

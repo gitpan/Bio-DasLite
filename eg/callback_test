@@ -1,0 +1,25 @@
+#!/usr/local/bin/perl -wT
+use strict;
+use lib "lib";
+use Bio::DasLite;
+use Data::Dumper;
+
+my $cb = sub {
+  my $struct = shift;
+  print STDERR Dumper($struct);
+};
+
+my $das = Bio::DasLite->new({
+			     'timeout'  => 30,
+			     'dsn'      => 'http://das.ensembl.org/das/decipher',
+#			     'callback' => $cb,
+			    });
+
+#$das->features("1:1,1000000");
+#$das->features("1:1,1000000", $cb);
+$das->features([
+		"1:1,1000000",
+		"2:1,1000000",
+		],
+	       $cb);
+

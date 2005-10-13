@@ -1,5 +1,8 @@
 Revision history for Perl extension Bio::DasLite.
 
+0.06  Fixes for the regex/stack problems in 0.05.
+      Added callback support for stylesheet and features calls
+
 0.05  Stylesheet support. Seems to tickle some perl regex/stack bugs
       on certain platforms (x86 Linux, Alpha Tru64). It works fine on my G4.
 
