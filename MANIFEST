@@ -3,6 +3,10 @@ Makefile.PL
 MANIFEST
 README
 t/Bio-DasLite.t
+t/statuscodes.t
 lib/Bio/DasLite.pm
 lib/Bio/DasLite/UserAgent.pm
+eg/comparison
+eg/stylesheet_test
+eg/callback_test
 

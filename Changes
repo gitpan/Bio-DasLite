@@ -1,5 +1,11 @@
 Revision history for Perl extension Bio::DasLite.
 
+0.08  Added multi-link, multi-note, multi-group-link and multi-group-note support
+      Added X-Forwarded-For HTTP header for IP-based ACLs
+      Added passthrough for HTTP header data
+
+0.07  Internal development version
+
 0.06  Fixes for the regex/stack problems in 0.05.
       Added callback support for stylesheet and features calls
 

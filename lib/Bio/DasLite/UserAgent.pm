@@ -4,7 +4,7 @@ use LWP::Parallel::UserAgent;
 use vars qw(@ISA);
 @ISA = qw(LWP::Parallel::UserAgent);
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 sub new {
   my ($class, %args) = @_;
@@ -27,6 +27,24 @@ sub _need_proxy {
   bless $proxy, "Bio::DasLite::UserAgent::proxy";
   return $proxy;
 }
+
+sub on_failure {
+  my ($self, $request, $response, $entry)   = @_;
+  $self->{'statuscodes'}                  ||= {};
+  $self->{'statuscodes'}->{$request->url()} = $response->status_line();
+  return;
+}
+
+sub on_return {
+  return &on_failure(@_);
+}
+
+sub statuscodes {
+  my ($self, $url)         = @_;
+  $self->{'statuscodes'} ||= {};
+  return $url?$self->{'statuscodes'}->{$url}:$self->{'statuscodes'};
+}
+
 1;
 
 package Bio::DasLite::UserAgent::proxy;

@@ -5,7 +5,10 @@ use ExtUtils::MakeMaker;
 WriteMakefile(
     NAME              => 'Bio::DasLite',
     VERSION_FROM      => 'lib/Bio/DasLite.pm', # finds $VERSION
-    PREREQ_PM         => {LWP::Parallel::UserAgent => 2.57}, # e.g., Module::Name => 1.1
+    PREREQ_PM         => {LWP::Parallel::UserAgent => undef,
+			  HTTP::Request => undef,
+			  HTTP::Headers => undef,
+			 }, # e.g., Module::Name => 1.1
     ($] >= 5.005 ?     ## Add these new keywords supported since 5.005
       (ABSTRACT_FROM  => 'lib/Bio/DasLite.pm', # retrieve abstract from module
        AUTHOR         => 'Roger M Pettett <rmp@sanger.ac.uk>') : ()),

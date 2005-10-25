@@ -3,15 +3,16 @@ package Bio::DasLite;
 # Author:        rmp@sanger.ac.uk
 # Maintainer:    rmp@sanger.ac.uk
 # Created:       2005-08-23
-# Last Modified: 2005-10-12
+# Last Modified: 2005-10-24
 #
 use strict;
 use warnings;
 use Bio::DasLite::UserAgent;
 use HTTP::Request;
+use HTTP::Headers;
 
 our $DEBUG    = 0;
-our $VERSION  = '0.06';
+our $VERSION  = '0.08';
 our $BLK_SIZE = 8192;
 
 #########
@@ -37,14 +38,10 @@ our $ATTR     = {
 				    'start'        => [],
 				    'end'          => [],
 				    'orientation'  => [],
-				    'note'         => [],
 				    'phase'        => [],
 				    'score'        => [],
-				    #'link'         => [qw(href)],
 				    'group'        => {
-						       #'link'    => [qw(href)],
 						       'group'   => [qw(id label type)],
-						       'note'    => [],
 						       'target'  => [qw(id start stop)],
 						      },
 			           },
@@ -73,43 +70,61 @@ our $ATTR     = {
 								    'glyph' => {
 										'arrow'          => {
 												     %common_style_attrs,
-												     'parallel' => [],
+												     'parallel'     => [],
 												    },
 										'anchored_arrow' => {
 												     %common_style_attrs,
-												     'parallel' => [],
+												     'parallel'     => [],
+												     'orientation'  => [], # Ensembl extension
+												     'no_anchor'    => [], # Ensembl extension
 												    },
 										'box'            => {
 												     %common_style_attrs,
-												     'linewidth' => [],
+												     'linewidth'   => [],
+												     'pattern'     => [],  # Ensembl extension
 												    },
-										'farrow'          => {%common_style_attrs,},
-										'rarrow'          => {%common_style_attrs,},
-										'cross'           => {%common_style_attrs,},
-										'dot'             => {%common_style_attrs,},
-										'ex'              => {%common_style_attrs,},
-										'hidden'          => {%common_style_attrs,},
-										'line'            => {
-												      %common_style_attrs,
-												      'style'     => [],
-												     },
-										'span'            => {%common_style_attrs,},
-										'text'            => {
-												      %common_style_attrs,
-												      'font'     => [],
-												      'fontsize' => [],
-												      'string'   => [],
-												      'style'    => [],
-												     },
-										'primers'        => {%common_style_attrs,},
+										'farrow'         => {                      # Ensembl extension
+												     %common_style_attrs,
+												     'orientation' => [],
+												     'no_anchor'   => [],
+												    },
+										'rarrow'         => {                      # Ensembl extension
+												     %common_style_attrs,
+												     'orientation' => [],
+												     'no_anchor'   => [],
+												    },
+										'cross'          => {
+												     %common_style_attrs,
+												     'linewidth'   => [],  # Ensembl extension
+												    },
+										'dot'            => \%common_style_attrs,
+										'ex'             => {
+												     %common_style_attrs,
+												     'linewidth'   => [],  # Ensembl extension
+												    },
+										'hidden'         => \%common_style_attrs,
+										'line'           => {
+												     %common_style_attrs,
+												     'style'       => [],
+												    },
+										'span'           => \%common_style_attrs,
+										'text'           => {
+												     %common_style_attrs,
+												     'font'        => [],
+												     'fontsize'    => [],
+												     'string'      => [],
+												     'style'       => [],
+												    },
+										'primers'        => \%common_style_attrs,
 										'toomany'        => {
 												     %common_style_attrs,
-												     'linewidth' => [],
+												     'linewidth'    => [],
 												    },
 										'triangle'       => {
 												     %common_style_attrs,
-												     'linewidth' => [],
-												     'direction' => [],
+												     'linewidth'    => [],
+												     'direction'    => [],
+												     'orientation'  => [],
 												    },
 									       },
 								   },
@@ -204,8 +219,10 @@ sub dsn {
 # Note this call is 'dsns', as differentiated from 'dsn' which is the current configured source
 #
 sub dsns {
-  my ($self, $query) = @_;
-  return $self->_generic_request($query, 'dsn', 'use_basename' => 1);
+  my ($self, $query, $opts) = @_;
+  $opts ||= {};
+  $opts->{'use_basename'} = 1;
+  return $self->_generic_request($query, 'dsn', $opts);
 }
 
 #########
@@ -213,8 +230,8 @@ sub dsns {
 # e.g. chromosomes or contigs
 #
 sub entry_points {
-  my ($self, $query) = @_;
-  return $self->_generic_request($query, 'entry_points');
+  my ($self, $query, $opts) = @_;
+  return $self->_generic_request($query, 'entry_points', $opts);
 }
 
 #########
@@ -232,8 +249,8 @@ sub entry_points {
 # e.g. 32k_cloneset, karyotype, swissprot
 #
 sub types {
-  my ($self, $query) = @_;
-  return $self->_generic_request($query, 'type(s)');
+  my ($self, $query, $opts) = @_;
+  return $self->_generic_request($query, 'type(s)', $opts);
 }
 
 #########
@@ -241,9 +258,13 @@ sub types {
 # e.g. clones on a chromosome
 #
 sub features {
-  my ($self, $query, $callback) = @_;
-  $self->{'callback'}           = $callback if($callback);
-  return $self->_generic_request($query, 'feature(s)');
+  my ($self, $query, $callback, $opts) = @_;
+  if(ref($callback) eq "HASH" && !defined($opts)) {
+    $opts = $callback;
+    undef($callback);
+  }
+  $self->{'callback'} = $callback if($callback);
+  return $self->_generic_request($query, 'feature(s)', $opts);
 }
 
 #########
@@ -251,17 +272,21 @@ sub features {
 # e.g. chromosome 1 bases 1-1000
 #
 sub sequence {
-  my ($self, $query) = @_;
-  return $self->_generic_request($query, 'sequence');
+  my ($self, $query, $opts) = @_;
+  return $self->_generic_request($query, 'sequence', $opts);
 }
 
 #########
 # Retrieve stylesheet
 #
 sub stylesheet {
-  my ($self, $callback) = @_;
+  my ($self, $callback, $opts) = @_;
+  if(ref($callback) eq "HASH" && !defined($opts)) {
+    $opts = $callback;
+    undef($callback);
+  }
   $self->{'callback'}   = $callback if($callback);
-  return $self->_generic_request(undef, 'stylesheet');
+  return $self->_generic_request(undef, 'stylesheet', $opts);
 }
 
 #########
@@ -272,9 +297,10 @@ sub stylesheet {
 # Build the query URL; perform an HTTP fetch; drop into the recursive parser; apply any post-processing
 #
 sub _generic_request {
-  my ($self, $query, $fname, %opts) = @_;
+  my ($self, $query, $fname, $opts) = @_;
+  $opts            ||= {};
   my $ref            = {};
-  my $dsn            = $opts{'use_basename'}?$self->basename():$self->dsn();
+  my $dsn            = $opts->{'use_basename'}?$self->basename():$self->dsn();
   my @bn             = @{$dsn};
   my $results        = {};
   my @queries        = ();
@@ -378,19 +404,44 @@ sub _generic_request {
 # This uses our LWP::Parallel::UserAgent subclass which has better proxy handling
 #
 sub _fetch {
-  my ($self, $url_ref) = @_;
+  my ($self, $url_ref, $headers) = @_;
   $self->{'ua'}      ||= Bio::DasLite::UserAgent->new(
 						      'http_proxy' => $self->http_proxy(),
 						     );
   $self->{'ua'}->initialize();
+  $self->{'statuscodes'}        = {};
+  $headers->{'X-Forwarded-For'} ||= $ENV{'HTTP_X_FORWARDED_FOR'} if($ENV{'HTTP_X_FORWARDED_FOR'});
 
   for my $url (keys %$url_ref) {
     next unless(ref($url_ref->{$url}) eq "CODE");
     $DEBUG and print STDERR qq(Building HTTP::Request for $url [timeout=$self->{'timeout'}]\n);
-    $self->{'ua'}->register(HTTP::Request->new(GET => $url), $url_ref->{$url}, $BLK_SIZE);
+    my $response = $self->{'ua'}->register(HTTP::Request->new(GET => $url, HTTP::Headers->new(%{$headers})), $url_ref->{$url}, $BLK_SIZE);
+
+    $self->{'statuscodes'}->{$url} ||= $response->status_line() if($response);
   }
+
   $DEBUG and print STDERR qq(Requests submitted. Waiting for content\n);
   $self->{'ua'}->wait($self->{'timeout'});
+
+  for my $url (keys %$url_ref) {
+    next unless(ref($url_ref->{$url}) eq "CODE");
+
+    $self->{'statuscodes'}->{$url} ||= "200";
+  }
+}
+
+sub statuscodes {
+  my ($self, $url)         = @_;
+  $self->{'statuscodes'} ||= {};
+
+  if($self->{'ua'}) {
+    my $uacodes = $self->{'ua'}->statuscodes();
+    for my $k (keys %$uacodes) {
+      $self->{'statuscodes'}->{$k} = $uacodes->{$k} if($uacodes->{$k});
+    }
+  }
+
+  return $url?$self->{'statuscodes'}->{$url}:$self->{'statuscodes'};
 }
 
 #########
@@ -460,6 +511,11 @@ sub _parse_branch {
 										};
 							""
 						       }!smegi;
+  $blk =~ s!<note[^>]*?>([^<]+)</note>!{
+                                        $ref->{'note'} ||= [];
+					push @{$ref->{'note'}}, $1;
+					""
+				       }!smegi;
 
   if($addseginfo && $self->{'currentsegs'}->{$dsn} && @{$self->{'currentsegs'}->{$dsn}}) {
     while(my ($k, $v) = each %{$self->{'currentsegs'}->{$dsn}->[0]}) {
@@ -542,9 +598,9 @@ Bio::DasLite - Perl extension for the DAS (HTTP+XML) Protocol (http://biodas.org
   # Feature fetch with callback
   #
   my $callback = sub {
-		my $struct = shift;
-	        print STDERR Dumper($struct);
-	       };
+		      my $struct = shift;
+	              print STDERR Dumper($struct);
+	             };
   # then:
   $das->callback($callback);
   $das->features("1:1,1000000");
