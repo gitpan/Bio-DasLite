@@ -14,6 +14,7 @@ use HTTP::Headers;
 our $DEBUG    = 0;
 our $VERSION  = '0.08';
 our $BLK_SIZE = 8192;
+our $TIMEOUT  = 5;
 
 #########
 # $ATTR contains information about document structure - tags, attributes and subparts
@@ -59,6 +60,7 @@ our $ATTR     = {
 				    'description'  => [],
 				   },
 		 'type'         => {
+				    'type'         => [qw(id method category)],                           # types request
 				    'segment'      => [qw(id start stop type orientation size subparts)],
 				   },
 		 'stylesheet'   => {
@@ -151,7 +153,7 @@ sub new {
   my ($class, $ref) = @_;
   my $self = {
 	      'dsn'     => [],
-	      'timeout' => 5,
+	      'timeout' => $TIMEOUT,
 	      'data'    => {},
 	      'caching' => 1,
 	     };
@@ -220,8 +222,8 @@ sub dsn {
 #
 sub dsns {
   my ($self, $query, $opts) = @_;
-  $opts ||= {};
-  $opts->{'use_basename'} = 1;
+  $opts                   ||= {};
+  $opts->{'use_basename'}   = 1;
   return $self->_generic_request($query, 'dsn', $opts);
 }
 
@@ -298,16 +300,16 @@ sub stylesheet {
 #
 sub _generic_request {
   my ($self, $query, $fname, $opts) = @_;
-  $opts            ||= {};
-  my $ref            = {};
-  my $dsn            = $opts->{'use_basename'}?$self->basename():$self->dsn();
-  my @bn             = @{$dsn};
-  my $results        = {};
-  my @queries        = ();
-  my $reqname        = $fname;
-  $reqname           =~ s/[\(\)]//g;
-  ($fname)           = $fname =~ /^([a-z_]+)/;
-  my $attr           = $ATTR->{$fname};
+  $opts       ||= {};
+  my $ref       = {};
+  my $dsn       = $opts->{'use_basename'}?$self->basename():$self->dsn();
+  my @bn        = @{$dsn};
+  my $results   = {};
+  my @queries   = ();
+  my $reqname   = $fname;
+  $reqname      =~ s/[\(\)]//g;
+  ($fname)      = $fname =~ /^([a-z_]+)/;
+  my $attr      = $ATTR->{$fname};
 
   if($query) {
     if(ref($query) eq "HASH") {
@@ -369,7 +371,7 @@ sub _generic_request {
     }
   }
 
-  $self->_fetch($ref);
+  $self->_fetch($ref, $opts->{'headers'});
   $DEBUG and print STDERR qq(Content retrieved\n);
 
   #########
@@ -409,13 +411,14 @@ sub _fetch {
 						      'http_proxy' => $self->http_proxy(),
 						     );
   $self->{'ua'}->initialize();
-  $self->{'statuscodes'}        = {};
+  $self->{'statuscodes'}          = {};
+  $headers                      ||= {};
   $headers->{'X-Forwarded-For'} ||= $ENV{'HTTP_X_FORWARDED_FOR'} if($ENV{'HTTP_X_FORWARDED_FOR'});
 
   for my $url (keys %$url_ref) {
     next unless(ref($url_ref->{$url}) eq "CODE");
     $DEBUG and print STDERR qq(Building HTTP::Request for $url [timeout=$self->{'timeout'}]\n);
-    my $response = $self->{'ua'}->register(HTTP::Request->new(GET => $url, HTTP::Headers->new(%{$headers})), $url_ref->{$url}, $BLK_SIZE);
+    my $response = $self->{'ua'}->register(HTTP::Request->new('GET', $url, HTTP::Headers->new(%{$headers})), $url_ref->{$url}, $BLK_SIZE);
 
     $self->{'statuscodes'}->{$url} ||= $response->status_line() if($response);
   }
