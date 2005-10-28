@@ -21,6 +21,7 @@ our $TIMEOUT  = 5;
 # This is split up by call to reduce the number of tag passes for each response
 #
 our %common_style_attrs = (
+			   'zindex'  => [], # WTSI extension
 			   'height'  => [],
 			   'fgcolor' => [],
 			   'bgcolor' => [],
@@ -77,32 +78,32 @@ our $ATTR     = {
 										'anchored_arrow' => {
 												     %common_style_attrs,
 												     'parallel'     => [],
-												     'orientation'  => [], # Ensembl extension
-												     'no_anchor'    => [], # Ensembl extension
+												     'orientation'  => [], # WTSI extension
+												     'no_anchor'    => [], # WTSI extension
 												    },
 										'box'            => {
 												     %common_style_attrs,
 												     'linewidth'   => [],
-												     'pattern'     => [],  # Ensembl extension
+												     'pattern'     => [],  # WTSI extension
 												    },
-										'farrow'         => {                      # Ensembl extension
+										'farrow'         => {                      # WTSI extension
 												     %common_style_attrs,
 												     'orientation' => [],
 												     'no_anchor'   => [],
 												    },
-										'rarrow'         => {                      # Ensembl extension
+										'rarrow'         => {                      # WTSI extension
 												     %common_style_attrs,
 												     'orientation' => [],
 												     'no_anchor'   => [],
 												    },
 										'cross'          => {
 												     %common_style_attrs,
-												     'linewidth'   => [],  # Ensembl extension
+												     'linewidth'   => [],  # WTSI extension
 												    },
 										'dot'            => \%common_style_attrs,
 										'ex'             => {
 												     %common_style_attrs,
-												     'linewidth'   => [],  # Ensembl extension
+												     'linewidth'   => [],  # WTSI extension
 												    },
 										'hidden'         => \%common_style_attrs,
 										'line'           => {
@@ -198,7 +199,7 @@ sub basename {
   my @res          = ();
 
   for my $service (@dsns) {
-    $service =~ m|(https?://.*?/das)|;
+    $service =~ m|(https?://.*/das)|;
     push @res, $1 if($1);
   }
 

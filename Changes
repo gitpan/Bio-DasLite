@@ -1,5 +1,7 @@
 Revision history for Perl extension Bio::DasLite.
 
+0.10  Fixed dsns DAS request (source basename)
+
 0.09  Fixed broken 'types' request
 
 0.08  Added multi-link, multi-note, multi-group-link and multi-group-note support
