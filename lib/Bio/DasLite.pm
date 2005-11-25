@@ -10,9 +10,10 @@ use warnings;
 use Bio::DasLite::UserAgent;
 use HTTP::Request;
 use HTTP::Headers;
+#use Data::Dumper;
 
 our $DEBUG    = 0;
-our $VERSION  = '0.08';
+our $VERSION  = '0.11';
 our $BLK_SIZE = 8192;
 our $TIMEOUT  = 5;
 
@@ -21,12 +22,14 @@ our $TIMEOUT  = 5;
 # This is split up by call to reduce the number of tag passes for each response
 #
 our %common_style_attrs = (
-			   'zindex'  => [], # WTSI extension
-			   'height'  => [],
-			   'fgcolor' => [],
-			   'bgcolor' => [],
-			   'label'   => [],
-			   'bump'    => [],
+			   'scoreheightmin' => [], # WTSI extension
+			   'scoreheightmax' => [], # WTSI extension
+			   'zindex'         => [], # WTSI extension
+			   'height'         => [],
+			   'fgcolor'        => [],
+			   'bgcolor'        => [],
+			   'label'          => [],
+			   'bump'           => [],
 			  );
 our $ATTR     = {
 		 '_segment'     => {
@@ -199,7 +202,7 @@ sub basename {
   my @res          = ();
 
   for my $service (@dsns) {
-    $service =~ m|(https?://.*/das)|;
+    $service =~ m|(https?://.*/das)/|;
     push @res, $1 if($1);
   }
 
@@ -360,7 +363,7 @@ sub _generic_request {
 
 	$DEBUG and print STDERR qq(invoking _parse_branch for $fname\n);
 
-	my $pat = qr!(<$fname.*?/$fname>|<$fname[^>]+/>)!smi;              
+	my $pat = qr!(<$fname.*?/$fname>|<$fname[^>]+/>)!smi;
 	while($self->{'data'}->{$request} =~ /$pat/) {
 	  &_parse_branch($self, $request, $results->{$request}, $attr, $1, 1);
 	  $self->{'data'}->{$request}     =~ s/$pat//;
@@ -408,9 +411,9 @@ sub _generic_request {
 #
 sub _fetch {
   my ($self, $url_ref, $headers) = @_;
-  $self->{'ua'}      ||= Bio::DasLite::UserAgent->new(
-						      'http_proxy' => $self->http_proxy(),
-						     );
+  $self->{'ua'}                ||= Bio::DasLite::UserAgent->new(
+								'http_proxy' => $self->http_proxy(),
+							       );
   $self->{'ua'}->initialize();
   $self->{'statuscodes'}          = {};
   $headers                      ||= {};
@@ -418,14 +421,22 @@ sub _fetch {
 
   for my $url (keys %$url_ref) {
     next unless(ref($url_ref->{$url}) eq "CODE");
-    $DEBUG and print STDERR qq(Building HTTP::Request for $url [timeout=$self->{'timeout'}]\n);
-    my $response = $self->{'ua'}->register(HTTP::Request->new('GET', $url, HTTP::Headers->new(%{$headers})), $url_ref->{$url}, $BLK_SIZE);
+    $DEBUG and print STDERR qq(Building HTTP::Request for $url [timeout=$self->{'timeout'}] via $url_ref->{$url}\n);
+
+    my $response = $self->{'ua'}->register(HTTP::Request->new('GET', $url, HTTP::Headers->new(%$headers)), $url_ref->{$url}, $BLK_SIZE);
 
     $self->{'statuscodes'}->{$url} ||= $response->status_line() if($response);
   }
 
   $DEBUG and print STDERR qq(Requests submitted. Waiting for content\n);
-  $self->{'ua'}->wait($self->{'timeout'});
+  eval {
+    $self->{'ua'}->wait($self->{'timeout'});
+  };
+
+  if($@) {
+    warn $@;
+#    print STDERR "ua dump:\n", Dumper $self->{'ua'};
+  }
 
   for my $url (keys %$url_ref) {
     next unless(ref($url_ref->{$url}) eq "CODE");
@@ -473,7 +484,7 @@ sub _parse_branch {
   for my $subpart (@subparts) {
     my $subpart_ref  = [];
 
-    my $pat = qr!(<$subpart[^/]+/>|<$subpart[^/]+>.*?/$subpart>)!smi;              
+    my $pat = qr!(<$subpart[^/]+/>|<$subpart[^/]+>.*?/$subpart>)!smi;
     while($blk =~ /$pat/) {
       &_parse_branch($self, $dsn, $subpart_ref, $attr->{$subpart}, $1, 0, $depth+1);
       $blk     =~ s/$pat//;
@@ -494,13 +505,14 @@ sub _parse_branch {
 
     for my $a (@{$opts}) {
       ($tmp)              = $blk =~ m|<$tag[^>]+$a="([^"]+?)"|smi;
-      $ref->{"${tag}_$a"} = $tmp if($tmp);
+      $ref->{"${tag}_$a"} = $tmp if(defined $tmp);
     }
 
     ($tmp)       = $blk =~ m|<$tag[^>]*>([^<]+)</$tag>|smi;
-    $tmp       ||= "";
-    $tmp         =~ s/^\s+$//smg;
-    $ref->{$tag} = $tmp if($tmp);
+    if(defined $tmp) {
+      $tmp         =~ s/^\s+$//smg;
+      $ref->{$tag} = $tmp if(length $tmp);
+    }
     $DEBUG and print STDERR " "x($depth*2), qq(  $tag = $tmp\n) if($tmp);
   }
 
