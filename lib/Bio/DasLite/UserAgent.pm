@@ -6,6 +6,12 @@ use vars qw(@ISA);
 
 our $VERSION = '0.02';
 
+=head2 new : Constructor
+
+Call with whatever LWP::P::UA usually has
+
+=cut
+
 sub new {
   my ($class, %args) = @_;
   my $self = LWP::Parallel::UserAgent->new(%args);
@@ -28,6 +34,9 @@ sub _need_proxy {
   return $proxy;
 }
 
+=head2: on_failure : internal error propagation method
+
+=cut
 sub on_failure {
   my ($self, $request, $response, $entry)   = @_;
   $self->{'statuscodes'}                  ||= {};
@@ -35,10 +44,16 @@ sub on_failure {
   return;
 }
 
+=head2: on_return : internal error propagation method
+
+=cut
 sub on_return {
   return &on_failure(@_);
 }
 
+=head2: statuscodes : helper for tracking response statuses keyed on url
+
+=cut
 sub statuscodes {
   my ($self, $url)         = @_;
   $self->{'statuscodes'} ||= {};
@@ -48,8 +63,19 @@ sub statuscodes {
 1;
 
 package Bio::DasLite::UserAgent::proxy;
+=head2 host : get/set host
+
+=cut
 sub host     { $_[0]->{'host'}; }
+
+=head2 port : get/set port
+
+=cut
 sub port     { $_[0]->{'port'}; }
+
+=head2 scheme : get/set scheme
+
+=cut
 sub scheme   { $_[0]->{'scheme'}; }
 
 #########
@@ -57,5 +83,8 @@ sub scheme   { $_[0]->{'scheme'}; }
 # Not sure what format this is supposed to be (username:password@ ?)
 # Things fail silently if this isn't present.
 #
+=head2 userinfo : stub for authentication? Stops LWP::P::UA from silently failing
+
+=cut
 sub userinfo { ""; }
 1;

@@ -13,3 +13,10 @@ WriteMakefile(
       (ABSTRACT_FROM  => 'lib/Bio/DasLite.pm', # retrieve abstract from module
        AUTHOR         => 'Roger M Pettett <rmp@sanger.ac.uk>') : ()),
 );
+print qq(
+******************************************************************************
+** The tests for this module need internet access                           **
+** Also remember to set your http_proxy environment variable if you need to **
+******************************************************************************
+);
+

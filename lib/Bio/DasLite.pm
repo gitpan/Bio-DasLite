@@ -10,10 +10,9 @@ use warnings;
 use Bio::DasLite::UserAgent;
 use HTTP::Request;
 use HTTP::Headers;
-#use Data::Dumper;
 
 our $DEBUG    = 0;
-our $VERSION  = '0.11';
+our $VERSION  = '0.12';
 our $BLK_SIZE = 8192;
 our $TIMEOUT  = 5;
 
@@ -22,9 +21,12 @@ our $TIMEOUT  = 5;
 # This is split up by call to reduce the number of tag passes for each response
 #
 our %common_style_attrs = (
+			   'yoffset'	    => [], # WTSI extension (available in Ensembl)
+			   'scorecolormin'  => [], # WTSI extension
+			   'scorecolormax'  => [], # WTSI extension
 			   'scoreheightmin' => [], # WTSI extension
 			   'scoreheightmax' => [], # WTSI extension
-			   'zindex'         => [], # WTSI extension
+			   'zindex'         => [], # WTSI extension (available in Ensembl)
 			   'height'         => [],
 			   'fgcolor'        => [],
 			   'bgcolor'        => [],
@@ -149,7 +151,32 @@ our $OPTS = {
 	     'dsn'          => [],
 	     'stylesheet'   => [],
 	    };
+=head1 NAME
 
+Bio::DasLite - Perl extension for the DAS (HTTP+XML) Protocol (http://biodas.org/)
+
+=head1 SYNOPSIS
+
+  use Bio::DasLite;
+
+=cut
+
+
+=head2 new : Constructor
+
+  my $das = Bio::DasLite->new({
+			       'timeout'    => 60,                                       # optional timeout in seconds
+                               'dsn'        => "http://das.ensembl.org/das/ensembl1834", # optional DSN (scalar, or arrayref)
+                               'http_proxy' => "http://webcache.local.com:3128",         # optional http proxy
+			      });
+
+ Options can be: dsn        (optional scalar or array ref, URLs of DAS services)
+                 timeout    (optional int,      HTTP fetch timeout in seconds)
+                 http_proxy (optional scalar,   web cache or proxy if not set in %ENV)
+                 caching    (optional bool,     primitive caching on/off)
+                 callback   (optional code ref, callback for processed xml blocks)
+
+=cut
 #########
 # Public methods
 #
@@ -171,30 +198,55 @@ sub new {
   return $self;
 }
 
+=head2 http_proxy : Get/Set http_proxy
+
+    $das->http_proxy("http://squid.myco.com:3128/");
+
+=cut
 sub http_proxy {
   my ($self, $proxy)    = @_;
   $self->{'http_proxy'} = $proxy if($proxy);
   return $self->{'http_proxy'};
 }
 
+=head2 timeout : Get/Set timeout
+
+    $das->timeout(30);
+
+=cut
 sub timeout {
   my ($self, $timeout) = @_;
   $self->{'timeout'}   = $timeout if($timeout);
   return $self->{'timeout'};
 }
 
+=head2 caching : Get/Set caching
+
+    $das->caching(1);
+
+=cut
 sub caching {
   my ($self, $caching) = @_;
   $self->{'caching'}   = $caching if(defined $caching);
   return $self->{'caching'};
 }
 
+=head2 callback : Get/Set callback code ref
+
+    $das->callback(sub { });
+
+=cut
 sub callback {
   my ($self, $callback) = @_;
   $self->{'callback'}   = $callback if($callback);
   return $self->{'callback'};
 }
 
+=head2 basename : Get base URL(s) of service
+
+    $das->basename(optional $dsn);
+
+=cut
 sub basename {
   my ($self, $dsn) = @_;
   $dsn           ||= $self->dsn();
@@ -202,13 +254,18 @@ sub basename {
   my @res          = ();
 
   for my $service (@dsns) {
-    $service =~ m|(https?://.*/das)/|;
+    $service =~ m|(https?://.*/das)/?|;
     push @res, $1 if($1);
   }
 
   return \@res;
 }
 
+=head2 dsn : Get/Set DSN
+
+  $das->dsn("http://das.ensembl.org/das/ensembl1834/"); # give dsn (scalar or arrayref) here if not specified in new()
+
+=cut
 sub dsn {
   my ($self, $dsn) = @_;
   if($dsn) {
@@ -221,9 +278,13 @@ sub dsn {
   return $self->{'dsn'};
 }
 
-#########
-# Note this call is 'dsns', as differentiated from 'dsn' which is the current configured source
-#
+=head2 dsns : Retrieve information about other sources served from this server.
+
+ Note this call is 'dsns', as differentiated from 'dsn' which is the current configured source
+
+  my $src_data = $das->dsns();
+
+=cut
 sub dsns {
   my ($self, $query, $opts) = @_;
   $opts                   ||= {};
@@ -231,38 +292,98 @@ sub dsns {
   return $self->_generic_request($query, 'dsn', $opts);
 }
 
-#########
-# Retrieve the list of entry_points for this source
-# e.g. chromosomes or contigs
-#
+=head2 entry_points : Retrieve the list of entry_points for this source
+
+  e.g. chromosomes and associated information (e.g. sequence length and version)
+
+  my $entry_points  = $das->entry_points();
+
+=cut
 sub entry_points {
   my ($self, $query, $opts) = @_;
   return $self->_generic_request($query, 'entry_points', $opts);
 }
 
-#########
-# Types of argument for 'types', 'features', 'sequence' calls:
-# "1"
-# "1:1,1000"
-# {'segment' => "1:1,1000", 'type' => 'exon'}
-# [{'segment' => "1:1,1000", 'type' => 'exon'}, {'segment' => "2:1,1000", 'type' => 'exon'}]
-#
-# See DAS specifications for other parameters
-#
+=head2 Types of argument for 'types', 'features', 'sequence' calls:
 
-#########
-# Retrieve the types of data available for this source
-# e.g. 32k_cloneset, karyotype, swissprot
-#
+  Segment Id:
+  "1"
+
+  Segment Id with range:
+  "1:1,1000"
+
+  Segment Id with range and type:
+  {
+    'segment' => "1:1,1000",
+    'type'    => 'exon',
+  }
+
+  Multiple Ids with ranges and types:
+  [
+    {
+      'segment' => "1:1,1000",
+      'type'    => 'exon',
+    },
+    {
+      'segment' => "2:1,1000",
+      'type'    => 'exon',
+    },
+  ]
+
+  See DAS specifications for other parameters
+
+=cut
+
+=head2 types : Find out about different data types available from this source
+
+  my $types         = $das->types(); # takes optional args - see DAS specs
+
+ Retrieve the types of data available for this source
+ e.g. 32k_cloneset, karyotype, swissprot
+
+=cut
 sub types {
   my ($self, $query, $opts) = @_;
   return $self->_generic_request($query, 'type(s)', $opts);
 }
 
-#########
-# Retrieve features from a segment
-# e.g. clones on a chromosome
-#
+=head2 features : Retrieve features from a segment
+
+   e.g. clones on a chromosome
+
+  #########
+  # Different ways to fetch features -
+  #
+  my $feature_data1 = $das->features("1:1,100000");
+  my $feature_data2 = $das->features(["1:1,100000", "2:20435000,21435000"]);
+  my $feature_data3 = $das->features({
+                                      'segment' => "1:1,1000",
+                                      'type'    => "karyotype",
+                                      # optional args - see DAS Spec
+                                     });
+  my $feature_data4 = $das->features([
+                                      {'segment' => "1:1,1000000",'type' => 'karyotype',},
+                                      {'segment' => "2:1,1000000",},
+                                     ]);
+
+  #########
+  # Feature fetch with callback
+  #
+  my $callback = sub {
+		      my $struct = shift;
+	              print STDERR Dumper($struct);
+	             };
+  # then:
+  $das->callback($callback);
+  $das->features("1:1,1000000");
+
+  # or:
+  $das->features("1:1,1000000", $callback);
+
+  # or:
+  $das->features(["1:1,1000000", "2:1,1000000", "3:1,1000000"], $callback);
+
+=cut
 sub features {
   my ($self, $query, $callback, $opts) = @_;
   if(ref($callback) eq "HASH" && !defined($opts)) {
@@ -273,18 +394,22 @@ sub features {
   return $self->_generic_request($query, 'feature(s)', $opts);
 }
 
-#########
-# Retrieve sequence data for a segment
-# e.g. chromosome 1 bases 1-1000
-#
+=head2 sequence : Retrieve sequence data for a segment (probably dna or protein)
+
+  my $sequence      = $das->sequence("2:1,1000"); # segment:start,stop (e.g. chromosome 2, bases 1 to 1000)
+
+=cut
 sub sequence {
   my ($self, $query, $opts) = @_;
   return $self->_generic_request($query, 'sequence', $opts);
 }
 
-#########
-# Retrieve stylesheet
-#
+=head2 stylesheet : Retrieve stylesheet data
+
+  my $style_data    = $das->stylesheet();
+  my $style_data2   = $das->stylesheet($callback);
+
+=cut
 sub stylesheet {
   my ($self, $callback, $opts) = @_;
   if(ref($callback) eq "HASH" && !defined($opts)) {
@@ -445,6 +570,12 @@ sub _fetch {
   }
 }
 
+=head2 statuscodes : Retrieve HTTP status codes for request URLs
+
+  my $code         = $das->statuscodes($url);
+  my $code_hashref = $das->statuscodes();
+
+=cut
 sub statuscodes {
   my ($self, $url)         = @_;
   $self->{'statuscodes'} ||= {};
@@ -559,80 +690,6 @@ sub _parse_branch {
 1;
 __END__
 
-=head1 NAME
-
-Bio::DasLite - Perl extension for the DAS (HTTP+XML) Protocol (http://biodas.org/)
-
-=head1 SYNOPSIS
-
-  use Bio::DasLite;
-
-  my $das = Bio::DasLite->new({
-			       'timeout'    => 60,                                       # optional timeout in seconds
-                               'dsn'        => "http://das.ensembl.org/das/ensembl1834", # optional DSN (scalar, or arrayref)
-                               'http_proxy' => "http://webcache.local.com:3128",         # optional http proxy
-			      });
-
-  $das->dsn("http://das.ensembl.org/das/ensembl1834/"); # give dsn (scalar or arrayref) here if not specified in new()
-
-  #########
-  # Retrieve other sources from the same service
-  #
-  my $src_data      = $das->dsns();
-
-  #########
-  # Retrieve entry_points, e.g. chromosomes and associated information (e.g. sequence length and version)
-  #
-  my $entry_points  = $das->entry_points();
-
-  #########
-  # Retrieve sequence data (probably dna or protein)
-  #
-  my $sequence      = $das->sequence("2:1,1000"); # segment:start,stop (e.g. chromosome 2, bases 1 to 1000)
-
-  #########
-  # Find out about different data types available from this source
-  #
-  my $types         = $das->types(); # takes optional args - see DAS specs
-
-  #########
-  # Different ways to fetch features -
-  #
-  my $feature_data1 = $das->features("1:1,100000");
-  my $feature_data2 = $das->features(["1:1,100000", "2:20435000,21435000"]);
-  my $feature_data3 = $das->features({
-                                      'segment' => "1:1,1000",
-                                      'type'    => "karyotype",
-                                      # optional args - see DAS Spec
-                                     });
-  my $feature_data4 = $das->features([
-                                      {'segment' => "1:1,1000000",'type' => 'karyotype',},
-                                      {'segment' => "2:1,1000000",},
-                                     ]);
-
-  #########
-  # Feature fetch with callback
-  #
-  my $callback = sub {
-		      my $struct = shift;
-	              print STDERR Dumper($struct);
-	             };
-  # then:
-  $das->callback($callback);
-  $das->features("1:1,1000000");
-
-  # or:
-  $das->features("1:1,1000000", $callback);
-
-  # or:
-  $das->features(["1:1,1000000", "2:1,1000000", "3:1,1000000"], $callback);
-
-  #########
-  # Fetch a stylesheet structure
-  #
-  my $style_data    = $das->stylesheet();
-
-  my $style_data2   = $das->stylesheet($callback);
 
 =head1 DESCRIPTION
 
@@ -648,11 +705,6 @@ ProServer (A DAS Server implementation) at:
 
 The venerable Bio::Das suite (CPAN and http://www.biodas.org/download/Bio::Das/).
 
-=head1 KNOWN BUGS
-
-On certain platforms the 'stylesheet' request segfaults complaining about free()ing an invalid pointer.
-e.g. it works find on my Mac, but not on Linux or Alpha (various perl versions).
-
 =head1 AUTHOR
 
 Roger Pettett, E<lt>rmp@sanger.ac.ukE<gt>
@@ -664,6 +716,5 @@ Copyright (C) 2005 by Roger Pettett
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.8.4 or,
 at your option, any later version of Perl 5 you may have available.
-
 
 =cut

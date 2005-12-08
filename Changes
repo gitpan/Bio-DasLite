@@ -1,5 +1,12 @@
 Revision history for Perl extension Bio::DasLite.
 
+0.12  Reworked all the tests.
+      Tweaked basename regex to allow more flexibility in
+      specifying services rather than dsns, i.e.
+      'dsn' => 'http://das.mysite.com/das'
+      rather than
+      'dsn' => 'http://das.mysite.com/das/dsn'
+
 0.11  Added a little extra debug, some extra eval traps, improved url processing
       and a couple of new WTSI extensions to the spec
 
