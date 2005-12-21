@@ -4,7 +4,7 @@ use LWP::Parallel::UserAgent;
 use vars qw(@ISA);
 @ISA = qw(LWP::Parallel::UserAgent);
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 =head2 new : Constructor
 
@@ -34,7 +34,7 @@ sub _need_proxy {
   return $proxy;
 }
 
-=head2: on_failure : internal error propagation method
+=head2 on_failure : internal error propagation method
 
 =cut
 sub on_failure {
@@ -44,14 +44,14 @@ sub on_failure {
   return;
 }
 
-=head2: on_return : internal error propagation method
+=head2 on_return : internal error propagation method
 
 =cut
 sub on_return {
   return &on_failure(@_);
 }
 
-=head2: statuscodes : helper for tracking response statuses keyed on url
+=head2 statuscodes : helper for tracking response statuses keyed on url
 
 =cut
 sub statuscodes {

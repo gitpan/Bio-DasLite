@@ -1,5 +1,8 @@
 Revision history for Perl extension Bio::DasLite.
 
+0.13  Absolutely minor change to include LWP::P::UA max_req connection throttling
+      Upgrade strongly recommended
+
 0.12  Reworked all the tests.
       Tweaked basename regex to allow more flexibility in
       specifying services rather than dsns, i.e.

@@ -12,9 +12,10 @@ use HTTP::Request;
 use HTTP::Headers;
 
 our $DEBUG    = 0;
-our $VERSION  = '0.12';
+our $VERSION  = '0.13';
 our $BLK_SIZE = 8192;
 our $TIMEOUT  = 5;
+our $MAX_REQ  = 5;
 
 #########
 # $ATTR contains information about document structure - tags, attributes and subparts
@@ -540,6 +541,7 @@ sub _fetch {
 								'http_proxy' => $self->http_proxy(),
 							       );
   $self->{'ua'}->initialize();
+  $self->{'ua'}->max_req($self->max_req()||$MAX_REQ);
   $self->{'statuscodes'}          = {};
   $headers                      ||= {};
   $headers->{'X-Forwarded-For'} ||= $ENV{'HTTP_X_FORWARDED_FOR'} if($ENV{'HTTP_X_FORWARDED_FOR'});
@@ -588,6 +590,18 @@ sub statuscodes {
   }
 
   return $url?$self->{'statuscodes'}->{$url}:$self->{'statuscodes'};
+}
+
+=head2 max_req set number of running concurrent requests
+
+  $das->max_req(5);
+  print $das->max_req();
+
+=cut
+sub max_req {
+  my ($self, $max)    = @_;
+  $self->{'_max_req'} = $max if($max);
+  return $self->{'_max_req'};
 }
 
 #########
