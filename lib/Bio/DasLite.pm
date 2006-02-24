@@ -3,7 +3,7 @@ package Bio::DasLite;
 # Author:        rmp@sanger.ac.uk
 # Maintainer:    rmp@sanger.ac.uk
 # Created:       2005-08-23
-# Last Modified: 2005-10-24
+# Last Modified: 2006-02-22
 #
 use strict;
 use warnings;
@@ -12,7 +12,7 @@ use HTTP::Request;
 use HTTP::Headers;
 
 our $DEBUG    = 0;
-our $VERSION  = '0.13';
+our $VERSION  = '0.14';
 our $BLK_SIZE = 8192;
 our $TIMEOUT  = 5;
 our $MAX_REQ  = 5;
@@ -58,7 +58,9 @@ our $ATTR     = {
 				   },
 		 'entry_points' => {
 				    'entry_points' => [qw(href version)],
-				    'segment'      => [qw(id start stop type orientation size subparts)],
+				    'segment'      => {
+						       'segment' => [qw(id start stop type orientation size subparts)],
+						      },
 				   },
 		 'dsn'          => {
 				    'dsn'          => [],
@@ -165,6 +167,8 @@ Bio::DasLite - Perl extension for the DAS (HTTP+XML) Protocol (http://biodas.org
 
 =head2 new : Constructor
 
+  my $das = Bio::DasLite->new("http://das.ensembl.org/das/ensembl1834");
+
   my $das = Bio::DasLite->new({
 			       'timeout'    => 60,                                       # optional timeout in seconds
                                'dsn'        => "http://das.ensembl.org/das/ensembl1834", # optional DSN (scalar, or arrayref)
@@ -192,8 +196,12 @@ sub new {
 
   bless $self, $class;
 
-  for my $arg (qw(dsn timeout http_proxy caching callback)) {
-    $self->$arg($ref->{$arg}) if(defined $ref->{$arg} && $self->can($arg));
+  if($ref && ref($ref)) {
+    for my $arg (qw(dsn timeout http_proxy caching callback)) {
+      $self->$arg($ref->{$arg}) if(defined $ref->{$arg} && $self->can($arg));
+    }
+  } elsif($ref) {
+    $self->dsn($ref);
   }
 
   return $self;
@@ -443,32 +451,62 @@ sub _generic_request {
 
   if($query) {
     if(ref($query) eq "HASH") {
+      #########
+      # If the query param was a hashref, stitch the parts together
+      #
       push @queries, join(";", map { "$_=$query->{$_}" } grep { $query->{$_} } @{$OPTS->{$fname}});
-#      $self->{'callback'} = $query->{'callback'} if($query->{'callback'});
 
     } elsif(ref($query) eq "ARRAY") {
+      #########
+      # If the query param was an arrayref
+      #
+
       if(ref($query->[-1]) eq "CODE") {
+	#########
+	# ... and the last arg is a code-block, set up the callback for this run and remove the arg
+	#
 	$self->callback($query->[-1]);
 	pop @{$query};
       }
 
       if(ref($query->[0]) eq "HASH") {
+	#########
+	# ... or if the first array arg is a hash, stitch the series of queries together
+	#
 	push @queries, map {
 	  my $q = $_;
 	  join(";", map { "$_=$q->{$_}" } grep { $q->{$_} } @{$OPTS->{$fname}});
 	} @{$query};
+
       } else {
+	#########
+	# ... but otherwise assume it's a plain segment string
+	#
 	push @queries, map { "segment=$_"; } @{$query};
       }
     } else {
+      #########
+      # and if it wasn't a hashref or an arrayref, then assume it's a plain segment string
+      #
       push @queries, "segment=$query";
     }
   } else {
+    #########
+    # Otherwise we've no idea what you're trying to do
+    #
     push @queries, "";
   }
 
   for my $bn (@bn) {
+    #########
+    # loop over dsn basenames
+    #
+
     for my $request (map { "$bn/$reqname?$_" } @queries) {
+      #########
+      # and for each dsn, loop over the query request
+      #
+
       if($self->{'caching'} && $self->{'_cache'}->{$request}) {
 	#########
 	# the key has to be present, but the '0' callback will be ignored by _fetch
@@ -478,13 +516,18 @@ sub _generic_request {
       }
 
       $results->{$request} = [];
-      $ref->{$request} = sub {
+      $ref->{$request}     = sub {
 	my $data                     = shift;
 	$self->{'data'}->{$request} .= $data;
 
-	unless($self->{'currentsegs'}->{$request}) {
+	if(!$self->{'currentsegs'}->{$request}) {
 	  $self->{'currentsegs'}->{$request} = [];
-	  $data   =~ s/(<segment[^>]+?>)/&_parse_branch($self, $request, $self->{'currentsegs'}->{$request}, $ATTR->{'_segment'}, $1, 0)/smegi;
+	  $data =~ s/(<segment[^>]+?>)/&_parse_branch($self,
+						      $request,
+						      $self->{'currentsegs'}->{$request},
+						      $ATTR->{'_segment'},
+						      $1,
+						      0)/smegi;
 	}
 
 	$DEBUG and print STDERR qq(invoking _parse_branch for $fname\n);
@@ -496,6 +539,14 @@ sub _generic_request {
 	}
 
 	$DEBUG and print STDERR qq(completed _parse_branch\n);
+
+	if(scalar @{$results->{$request}} == 0) {
+	  #########
+	  # If no results (e.g. features) were found for this request
+	  # then for convenience, copy in the segment information
+	  #
+	  $results->{$request} = $self->{'currentsegs'}->{$request}->[0];
+	}
 	return;
       };
     }
@@ -511,7 +562,7 @@ sub _generic_request {
     $DEBUG and print STDERR qq(Running postprocessing for entry_points\n);
     for my $s (keys %$results) {
       for my $r (@{$results->{$s}}) {
-	delete $r->{'entry_points'};
+	delete $r->{'segment_id'};
       }
     }
   }
@@ -547,10 +598,14 @@ sub _fetch {
   $headers->{'X-Forwarded-For'} ||= $ENV{'HTTP_X_FORWARDED_FOR'} if($ENV{'HTTP_X_FORWARDED_FOR'});
 
   for my $url (keys %$url_ref) {
-    next unless(ref($url_ref->{$url}) eq "CODE");
+    next if(ref($url_ref->{$url}) ne "CODE");
     $DEBUG and print STDERR qq(Building HTTP::Request for $url [timeout=$self->{'timeout'}] via $url_ref->{$url}\n);
 
-    my $response = $self->{'ua'}->register(HTTP::Request->new('GET', $url, HTTP::Headers->new(%$headers)), $url_ref->{$url}, $BLK_SIZE);
+    my $response = $self->{'ua'}->register(HTTP::Request->new('GET',
+							      $url,
+							      HTTP::Headers->new(%$headers)),
+					   $url_ref->{$url},
+					   $BLK_SIZE);
 
     $self->{'statuscodes'}->{$url} ||= $response->status_line() if($response);
   }
@@ -562,11 +617,10 @@ sub _fetch {
 
   if($@) {
     warn $@;
-#    print STDERR "ua dump:\n", Dumper $self->{'ua'};
   }
 
   for my $url (keys %$url_ref) {
-    next unless(ref($url_ref->{$url}) eq "CODE");
+    next if(ref($url_ref->{$url}) ne "CODE");
 
     $self->{'statuscodes'}->{$url} ||= "200";
   }
@@ -603,6 +657,7 @@ sub max_req {
   $self->{'_max_req'} = $max if($max);
   return $self->{'_max_req'};
 }
+
 
 #########
 # Using the $attr structure describing the structure of this branch,

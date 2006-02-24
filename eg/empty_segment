@@ -1,0 +1,18 @@
+#!/usr/bin/perl -wT
+use strict;
+use lib qw(blib/lib lib ../blib/lib ../lib);
+use Bio::DasLite;
+use Data::Dumper;
+
+my $das = Bio::DasLite->new("http://servlet.sanger.ac.uk:8080/das/ensembl_Anopheles_gambiae_core_28_2c");
+$das->timeout(60);
+print Dumper($das->features([
+			     {
+			      'segment'  => "3R",
+			      'category' => 'null',
+			     },
+			     {
+			      'segment' => '3L',
+			      'category' => 'null',
+			     }
+			    ]));

@@ -5,10 +5,14 @@ README
 t/00-distribution.t
 t/01-general.t
 t/05-singledsn.t
+t/06-singledsn-singleseg.t
+t/07-singledsn-multiseg.t
 t/10-multidsn.t
+t/50-entry_points.t
 lib/Bio/DasLite.pm
 lib/Bio/DasLite/UserAgent.pm
 eg/comparison
 eg/stylesheet_test
 eg/callback_test
+eg/empty_segment
 
