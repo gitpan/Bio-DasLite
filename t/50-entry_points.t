@@ -1,14 +1,13 @@
 use strict;
 use Test::More tests => 1;
-
+use Data::Dumper;
 my $das     = Bio::DasLite::Test->new({'dsn' => 'foo'});
 my $ep      = $das->entry_points();
 my $results = (values %$ep)[0];
 
+#print STDERR Dumper($results);
+
 is(scalar @{$results->[0]->{'segment'}}, 22, "Correct number of segments returned");
-
-
-
 
 package Bio::DasLite::Test;
 use base "Bio::DasLite";

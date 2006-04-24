@@ -16,7 +16,7 @@ sub new {
   my ($class, %args) = @_;
   my $self = LWP::Parallel::UserAgent->new(%args);
   bless $self, $class;
-  $self->{'http_proxy'} = $args{'http_proxy'} || $ENV{'http_proxy'};
+  $self->{'http_proxy'} = $args{'http_proxy'}; # || $ENV{'http_proxy'};
   return $self;
 }
 

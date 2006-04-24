@@ -1,0 +1,15 @@
+#!/usr/bin/perl -wT
+use strict;
+use lib qw(lib ../lib);
+use Bio::DasLite;
+
+my $bdl = Bio::DasLite->new_from_registry({
+					   'http_proxy' => 'http://webcache.sanger.ac.uk:3128/',
+					   'capability' => ['features'],
+					   'category'   => ['Protein Sequence'],
+					  });
+
+
+print qq(Using Bio::DasLite v$Bio::DasLite::VERSION configured with registry DSN list:\n),
+  join("\n", sort @{$bdl->dsn()}),
+  "\n";

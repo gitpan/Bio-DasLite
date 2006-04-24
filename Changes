@@ -1,5 +1,11 @@
 Revision history for Perl extension Bio::DasLite.
 
+1.27  Switched over to CVS version to make things easier for me to track
+      Minor revisions. Some more tests
+ 
+0.15  Includes registry support.
+      See 'new_from_registry', 'registry' and 'registry_sources' methods.
+
 0.14  Fix for entry_points structure and a new test for it
       Added a new way to use the constructor: my $das = Bio::DasLite->new("http://server/das/source");
       Added a convenience side-effect - give segment data in responses for segments without features in

@@ -3,16 +3,17 @@ package Bio::DasLite;
 # Author:        rmp@sanger.ac.uk
 # Maintainer:    rmp@sanger.ac.uk
 # Created:       2005-08-23
-# Last Modified: 2006-02-22
+# Last Modified: 2006-02-23
 #
 use strict;
 use warnings;
 use Bio::DasLite::UserAgent;
 use HTTP::Request;
 use HTTP::Headers;
+use Data::Dumper;
 
 our $DEBUG    = 0;
-our $VERSION  = '0.14';
+our $VERSION  = do { my @r = (q$Revision: 1.28 $ =~ /\d+/g); sprintf "%d."."%03d" x $#r, @r };
 our $BLK_SIZE = 8192;
 our $TIMEOUT  = 5;
 our $MAX_REQ  = 5;
@@ -161,9 +162,11 @@ Bio::DasLite - Perl extension for the DAS (HTTP+XML) Protocol (http://biodas.org
 =head1 SYNOPSIS
 
   use Bio::DasLite;
+  my $bdl     = Bio::DasLite->new_from_registry({'category' => 'Chromosome'});
+  my $results = $bdl->features("22");
 
-=cut
 
+=head1 METHODS
 
 =head2 new : Constructor
 
@@ -179,31 +182,61 @@ Bio::DasLite - Perl extension for the DAS (HTTP+XML) Protocol (http://biodas.org
                  timeout    (optional int,      HTTP fetch timeout in seconds)
                  http_proxy (optional scalar,   web cache or proxy if not set in %ENV)
                  caching    (optional bool,     primitive caching on/off)
-                 callback   (optional code ref, callback for processed xml blocks)
+                 callback   (optional code ref, callback for processed XML blocks)
+                 registry   (optional array ref containing DAS registry service URLs
+                             defaults to 'http://das.sanger.ac.uk/registry/services/das')
 
 =cut
-#########
-# Public methods
-#
 sub new {
   my ($class, $ref) = @_;
   my $self = {
-	      'dsn'     => [],
-	      'timeout' => $TIMEOUT,
-	      'data'    => {},
-	      'caching' => 1,
+	      'dsn'               => [],
+	      'timeout'           => $TIMEOUT,
+	      'data'              => {},
+	      'caching'           => 1,
+	      'registry'          => [qw(http://das.sanger.ac.uk/registry/services/das)],
+	      '_registry_sources' => [],
 	     };
 
   bless $self, $class;
 
   if($ref && ref($ref)) {
-    for my $arg (qw(dsn timeout http_proxy caching callback)) {
+    for my $arg (qw(dsn timeout http_proxy caching callback registry)) {
       $self->$arg($ref->{$arg}) if(defined $ref->{$arg} && $self->can($arg));
     }
   } elsif($ref) {
     $self->dsn($ref);
   }
 
+  return $self;
+}
+
+=head2 new_from_registry : Constructor
+
+  Similar to 'new' above but supports 'capabilities' and 'category'
+  in the given hashref, using them to query the DAS registry and
+  configuring the DSNs accordingly.
+
+  my $das = Bio::DasLite->new_from_registry({
+					     'capabilities' => ['features'],
+					     'category'     => ['Protein Sequence'],
+					    });
+
+ Options are as above, plus
+                 capability   (optional arrayref of capabilities)
+                 category     (optional arrayref of categories)
+
+
+For a complete list of capabilities and categories, see:
+
+    http://das.sanger.ac.uk/registry/
+
+=cut
+sub new_from_registry {
+  my ($class, $ref) = @_;
+  my $self    = $class->new($ref);
+  my $sources = $self->registry_sources($ref);
+  $self->dsn([map { $_->{'url'} } @$sources]);
   return $self;
 }
 
@@ -215,7 +248,7 @@ sub new {
 sub http_proxy {
   my ($self, $proxy)    = @_;
   $self->{'http_proxy'} = $proxy if($proxy);
-  return $self->{'http_proxy'};
+  return $self->{'http_proxy'} || $ENV{'http_proxy'};
 }
 
 =head2 timeout : Get/Set timeout
@@ -273,6 +306,10 @@ sub basename {
 =head2 dsn : Get/Set DSN
 
   $das->dsn("http://das.ensembl.org/das/ensembl1834/"); # give dsn (scalar or arrayref) here if not specified in new()
+
+  Or, if you want to add to the existing dsn list and you're feeling sneaky...
+
+  push $das->dsn, "http://my.server/das/additionalsource";
 
 =cut
 sub dsn {
@@ -515,38 +552,40 @@ sub _generic_request {
 	next;
       }
 
-      $results->{$request} = [];
+      $results->{$request}           = [];
+
       $ref->{$request}     = sub {
 	my $data                     = shift;
 	$self->{'data'}->{$request} .= $data;
 
 	if(!$self->{'currentsegs'}->{$request}) {
-	  $self->{'currentsegs'}->{$request} = [];
-	  $data =~ s/(<segment[^>]+?>)/&_parse_branch($self,
-						      $request,
-						      $self->{'currentsegs'}->{$request},
-						      $ATTR->{'_segment'},
-						      $1,
-						      0)/smegi;
+	  #########
+	  # If we haven't yet found segment information for this request
+	  # Then look for some. This one is a non-destructive scan.
+	  #
+	  my $matches = $self->{'data'}->{$request}  =~ m!(<segment[^>]*>)!i;
+
+	  if($matches) {
+	    my $seginfo = [];
+	    &_parse_branch($self,
+			   $request,
+			   $seginfo,
+			   $ATTR->{'_segment'},
+			   $1,
+			   0);
+	    $self->{'currentsegs'}->{$request} = $seginfo->[0];
+	  }
 	}
 
 	$DEBUG and print STDERR qq(invoking _parse_branch for $fname\n);
 
 	my $pat = qr!(<$fname.*?/$fname>|<$fname[^>]+/>)!smi;
-	while($self->{'data'}->{$request} =~ /$pat/) {
+	while($self->{'data'}->{$request} =~ s/$pat//) {
 	  &_parse_branch($self, $request, $results->{$request}, $attr, $1, 1);
-	  $self->{'data'}->{$request}     =~ s/$pat//;
 	}
 
 	$DEBUG and print STDERR qq(completed _parse_branch\n);
 
-	if(scalar @{$results->{$request}} == 0) {
-	  #########
-	  # If no results (e.g. features) were found for this request
-	  # then for convenience, copy in the segment information
-	  #
-	  $results->{$request} = $self->{'currentsegs'}->{$request}->[0];
-	}
 	return;
       };
     }
@@ -556,12 +595,29 @@ sub _generic_request {
   $DEBUG and print STDERR qq(Content retrieved\n);
 
   #########
-  # postprocessing (hack!)
+  # Postprocessing hacks
+  #
+
+  #########
+  # Add in useful segment information for empty segments
+  # In theory there should only ever be one element in @{$self->{'seginfo'}}
+  # as requests are parallelised by segment
+  #
+  for my $req (keys %$results) {
+    if(!$results->{$req} ||
+       scalar @{$results->{$req}} == 0) {
+      $results->{$req} = $self->{'currentsegs'}->{$req};
+    }
+  }
+
+  #########
+  # minor tidy up for entry_points requests
   #
   if($fname eq "entry_points") {
     $DEBUG and print STDERR qq(Running postprocessing for entry_points\n);
     for my $s (keys %$results) {
-      for my $r (@{$results->{$s}}) {
+      my $res = $results->{$s} || [];
+      for my $r (@$res) {
 	delete $r->{'segment_id'};
       }
     }
@@ -666,8 +722,7 @@ sub max_req {
 sub _parse_branch {
   my ($self, $dsn, $ar_ref, $attr, $blk, $addseginfo, $depth) = @_;
   $depth ||= 0;
-
-  my $ref = {};
+  my $ref  = {};
 
   my (@parts, @subparts);
   while(my ($k, $v) = each %$attr) {
@@ -679,15 +734,14 @@ sub _parse_branch {
   }
 
   #########
-  # handle groups
+  # recursive child-node handling, usually for <group>s
   #
   for my $subpart (@subparts) {
     my $subpart_ref  = [];
 
     my $pat = qr!(<$subpart[^/]+/>|<$subpart[^/]+>.*?/$subpart>)!smi;
-    while($blk =~ /$pat/) {
+    while($blk =~ s/$pat//) {
       &_parse_branch($self, $dsn, $subpart_ref, $attr->{$subpart}, $1, 0, $depth+1);
-      $blk     =~ s/$pat//;
     }
 
     $ref->{$subpart} = $subpart_ref if(scalar @{$subpart_ref});
@@ -698,8 +752,10 @@ sub _parse_branch {
     #
   }
 
+  #########
+  # Attribute processing for tags in blocks
+  #
   my $tmp;
-
   for my $tag (@parts) {
     my $opts = $attr->{$tag}||[];
 
@@ -708,7 +764,7 @@ sub _parse_branch {
       $ref->{"${tag}_$a"} = $tmp if(defined $tmp);
     }
 
-    ($tmp)       = $blk =~ m|<$tag[^>]*>([^<]+)</$tag>|smi;
+    ($tmp) = $blk =~ m|<$tag[^>]*>([^<]+)</$tag>|smi;
     if(defined $tmp) {
       $tmp         =~ s/^\s+$//smg;
       $ref->{$tag} = $tmp if(length $tmp);
@@ -719,22 +775,24 @@ sub _parse_branch {
   #########
   # handle multiples of twig elements here
   #
-  $blk =~ s!<link\s+href="([^"]+)"[^>]*?>([^<]+)</link>!{
-                                                        $ref->{'link'} ||= [];
-							push @{$ref->{'link'}}, {
-										 'href' => $1,
-										 'txt'  => $2,
-										};
-							""
-						       }!smegi;
-  $blk =~ s!<note[^>]*?>([^<]+)</note>!{
-                                        $ref->{'note'} ||= [];
-					push @{$ref->{'note'}}, $1;
-					""
-				       }!smegi;
+  my $linkre = qr!<link\s+href="([^"]+)"[^>]*?>([^<]*)</link>!;
+  my $notere = qr!<note[^>]*>([^<]*)</note>!;
+  $blk       =~ s!$linkre!{
+                           $ref->{'link'} ||= [];
+		           push @{$ref->{'link'}}, {
+					            'href' => $1,
+					            'txt'  => $2,
+					           };
+		           ""
+		          }!smegi;
+  $blk       =~ s!$notere!{
+                           $ref->{'note'} ||= [];
+		           push @{$ref->{'note'}}, $1;
+			   ""
+			  }!smegi;
 
-  if($addseginfo && $self->{'currentsegs'}->{$dsn} && @{$self->{'currentsegs'}->{$dsn}}) {
-    while(my ($k, $v) = each %{$self->{'currentsegs'}->{$dsn}->[0]}) {
+  if($addseginfo && $self->{'currentsegs'}->{$dsn}) {
+    while(my ($k, $v) = each %{$self->{'currentsegs'}->{$dsn}}) {
       $ref->{$k} = $v;
     }
   }
@@ -748,13 +806,119 @@ sub _parse_branch {
   if($depth == 0 && $self->{'callback'}) {
     $DEBUG and print STDERR " "x($depth*2), qq(executing callback at depth $depth\n);
     $ref->{'dsn'} = $dsn;
-    my $callback = $self->{'callback'};
+    my $callback  = $self->{'callback'};
     &$callback($ref);
   }
 
   return "";
 }
 
+=head2 registry : Get/Set accessor for DAS-Registry service URLs
+
+  $biodaslite->registry('http://das.sanger.ac.uk/registry/das');
+
+  my $registry_arrayref = $biodaslite->registry();
+
+=cut
+sub registry {
+  my ($self, @reg) = @_;
+
+  if((scalar @reg == 1) && ref($reg[0]) && ref($reg[0]) eq "ARRAY") {
+    push @{$self->{'registry'}}, @{$reg[0]};
+  } else {
+    push @{$self->{'registry'}}, @reg;
+  }
+  return $self->{'registry'};
+}
+
+=head2 registry_sources : Arrayref of dassource objects from the configured registry services
+
+  my $sources_ref = $biodaslite->registry_sources();
+
+  my $sources_ref = $biodaslite->registry_sources({
+    'capability' => ['features','stylesheet'],
+  });
+
+  my $sources_ref = $biodaslite->registry_sources({
+    'category' => ['Protein Sequence'],
+  });
+
+=cut
+sub registry_sources {
+  my ($self, $filters, $flush) = @_;
+
+  $filters       ||= {};
+  my $category     = $filters->{'category'}   ||[];
+  my $capability   = $filters->{'capability'} ||[];
+  $category        = [$category]   if(!ref($category));
+  $capability      = [$capability] if(!ref($capability));
+
+  eval "require SOAP::Lite";
+  if($@) {
+    warn qq(SOAP::Lite unavailable: $@);
+    return [];
+  }
+  $DEBUG and print STDERR qq(Loaded SOAP::Lite\n);
+  $flush and $self->{'_registry_sources'} = [];
+
+  if(scalar @{$self->{'_registry_sources'}} == 0) {
+    for my $reg (@{$self->registry()}) {
+      $DEBUG and print STDERR qq(Building soap request for $reg\n);
+      my $soap = SOAP::Lite->service("$reg:das_directory?wsdl");
+      $DEBUG and print STDERR qq(Setting soap proxy\n);
+      $soap->proxy($reg, proxy => ['http'=>$self->http_proxy()]) if($self->http_proxy());
+      $DEBUG and print STDERR qq(Running request for $reg\n);
+
+      $SIG{ALRM} = sub { die "timeout"; };
+      alarm($TIMEOUT);
+      eval {
+	push @{$self->{'_registry_sources'}}, @{$soap->listServices()};
+      };
+      alarm(0);
+    }
+  }
+
+  #########
+  # Jump out if there's no filtering to be done
+  #
+  return $self->{'_registry_sources'} if(!scalar keys %$filters);
+
+  my @sources = @{$self->{'_registry_sources'}};
+
+  #########
+  # Apply capability filter
+  #
+  if((ref($capability) eq "ARRAY") && (scalar @$capability)) {
+    my $str    = join('|', @$capability);
+    my $match  = qr/$str/;
+    my $filter = sub {
+      my ($src, $match) = @_;
+      for my $scap (@{$src->{'capabilities'}}) {
+	return 1 if($scap =~ $match);
+      }
+      return 0;
+    };
+    @sources  = grep { &$filter($_, $match) } @sources;
+  }
+
+  #########
+  # Apply coordinatesystem/category filter
+  #
+  if((ref($category) eq "ARRAY") && (scalar @$category)) {
+    my $filter = sub {
+      my ($src,$match) = @_;
+      for my $scoord (@{$src->{'coordinateSystem'}}) {
+	for my $m (@{$match}) {
+	  return 1 if($scoord->{'category'} eq $m);
+	}
+      }
+      return 0;
+    };
+    @sources  = grep { &$filter($_, $category) } @sources;
+  }
+
+  return \@sources;
+}
 
 1;
 __END__
@@ -769,10 +933,13 @@ It requires LWP::Parallel::UserAgent.
 
 DAS Specifications at: http://biodas.org/documents/spec.html
 
-ProServer (A DAS Server implementation) at:
+ProServer (A DAS Server implementation also by the author) at:
    http://www.sanger.ac.uk/proserver/
 
 The venerable Bio::Das suite (CPAN and http://www.biodas.org/download/Bio::Das/).
+
+The DAS Registry at:
+   http://das.sanger.ac.uk/registry/
 
 =head1 AUTHOR
 

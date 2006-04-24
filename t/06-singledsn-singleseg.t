@@ -1,13 +1,13 @@
-use Test::More tests => 18;
+use Test::More tests => 17;
 use strict;
-use Bio::DasLite;
+
 my $src  = [qw(http://servlet.sanger.ac.uk/das/ensembl1834)];
-my $das  = Bio::DasLite->new({
-			      'dsn'     => $src,
-			      'timeout' => 30,
-			     });
-my $dsns = $das->dsns();
-ok(ref($dsns) eq "HASH", "dsns gives a hash (keyed on URL) of arrays");
+my $das  = Bio::DasLite::Test->new({
+				    'dsn'     => $src,
+				    'timeout' => 30,
+				   });
+#my $dsns = $das->dsns();
+#ok(ref($dsns) eq "HASH", "dsns gives a hash (keyed on URL) of arrays");
 
 my $req = "10:1,1000";
 for my $call (qw(entry_points types features sequence)) {
@@ -36,30 +36,42 @@ for my $call (qw(entry_points types features sequence)) {
   }
 }
 
-#########
-# The sequence test is highly sensitive to Dazzle crashes on the mapmaster, which happens nearly every time.
-# 
 my $sequence = $das->sequence("1:1,1000");
 my $key      = (keys %{$sequence})[0];
 my $seq      = $sequence->{$key}->[0]->{'sequence'} || "";
 $seq         =~ s/\s+//smg;
 
-#########
-# check return codes
-#
-my $codes   = $das->statuscodes();
-my $seqcode = "";
-for my $u (keys %$codes) {
-  if($u =~ /sequence.*1:1,1000/) {
-    $seqcode = substr($codes->{$u}, 0, 3);
-    last;
+is(length($seq), 1000, "requesting 1Kb of sequence returns 1Kb");
+
+
+
+
+package Bio::DasLite::Test;
+use base "Bio::DasLite";
+
+sub _fetch {
+  my ($self, $url_ref, $headers) = @_;
+
+  my $datafile = {
+		  'entry_points' => 't/ensembl1834_entry_points',
+		  'types'        => 't/ensembl1834_types',
+		  'features'     => 't/ensembl1834_features',
+		  'sequence'     => 't/ensembl1834_sequence',
+		 };
+
+
+  for my $url (keys %$url_ref) {
+    my ($cmd) = $url =~ m|.*/([^/\?\#]+)|;
+    my $fn    = $datafile->{$cmd};
+    open(my $fh, $fn) or die "No file available for $cmd test";
+    local $/ = undef;
+    my $xml  = <$fh>;
+    close($fh);
+
+    my $code_ref = $url_ref->{$url};
+    &$code_ref($xml);
+    $self->{'statuscodes'}->{$url} = 200;
   }
 }
+1;
 
-if($seqcode == 200) {
-  is(length($seq), 1000, "requesting 1Kb of sequence returns 1Kb");
-  
-} elsif($seqcode == 500) {
-  diag("Sequence fetch failed due to server error");
-  pass();
-}

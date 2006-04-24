@@ -31,7 +31,7 @@ DEPENDENCIES
 This module requires these other modules and libraries:
 
 LWP::Parallel::UserAgent
-
+SOAP::Lite is optional - required for registry support
 
 COPYRIGHT AND LICENCE
 
