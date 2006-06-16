@@ -1,0 +1,11 @@
+#!/usr/bin/perl
+use lib qw(../lib);
+use Bio::DasLite;
+use Data::Dumper;
+
+my $bdl = Bio::DasLite->new({
+				'dsn' => [qw(http://das.sanger.ac.uk/das/decipher
+					     http://das.ensembl.org/das/ens_36_omim_genes)]
+			    });
+
+print Dumper($bdl->features("22"));

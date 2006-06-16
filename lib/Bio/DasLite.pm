@@ -3,7 +3,7 @@ package Bio::DasLite;
 # Author:        rmp@sanger.ac.uk
 # Maintainer:    rmp@sanger.ac.uk
 # Created:       2005-08-23
-# Last Modified: 2006-02-23
+# Last Modified: 2006-06-05
 #
 use strict;
 use warnings;
@@ -13,7 +13,7 @@ use HTTP::Headers;
 use Data::Dumper;
 
 our $DEBUG    = 0;
-our $VERSION  = do { my @r = (q$Revision: 1.28 $ =~ /\d+/g); sprintf "%d."."%03d" x $#r, @r };
+our $VERSION  = do { my @r = (q$Revision: 1.36 $ =~ /\d+/g); sprintf "%d."."%03d" x $#r, @r };
 our $BLK_SIZE = 8192;
 our $TIMEOUT  = 5;
 our $MAX_REQ  = 5;
@@ -39,6 +39,7 @@ our $ATTR     = {
 		 '_segment'     => {
 				    'segment'      => [qw(id start stop version label)],
 				   },
+# feature and group notes and links are special cases and taken care of elsewhere
 		 'feature'      => {
 				    'feature'      => [qw(id label)],
 				    'method'       => [qw(id)],
@@ -83,49 +84,56 @@ our $ATTR     = {
 										'arrow'          => {
 												     %common_style_attrs,
 												     'parallel'     => [],
+												     'bar_style'    => [], # WTSI extension
 												    },
 										'anchored_arrow' => {
 												     %common_style_attrs,
 												     'parallel'     => [],
 												     'orientation'  => [], # WTSI extension
 												     'no_anchor'    => [], # WTSI extension
+												     'bar_style'    => [], # WTSI extension
 												    },
 										'box'            => {
 												     %common_style_attrs,
-												     'linewidth'   => [],
-												     'pattern'     => [],  # WTSI extension
+												     'linewidth'    => [],
+												     'pattern'      => [],  # WTSI extension
 												    },
 										'farrow'         => {                      # WTSI extension
 												     %common_style_attrs,
-												     'orientation' => [],
-												     'no_anchor'   => [],
+												     'orientation'  => [],
+												     'no_anchor'    => [],
+												     'bar_style'    => [], # WTSI extension
 												    },
 										'rarrow'         => {                      # WTSI extension
 												     %common_style_attrs,
-												     'orientation' => [],
-												     'no_anchor'   => [],
+												     'orientation'  => [],
+												     'no_anchor'    => [],
+												     'bar_style'    => [], # WTSI extension
 												    },
 										'cross'          => {
 												     %common_style_attrs,
-												     'linewidth'   => [],  # WTSI extension
+												     'linewidth'    => [],  # WTSI extension
 												    },
 										'dot'            => \%common_style_attrs,
 										'ex'             => {
 												     %common_style_attrs,
-												     'linewidth'   => [],  # WTSI extension
+												     'linewidth'    => [],  # WTSI extension
 												    },
 										'hidden'         => \%common_style_attrs,
 										'line'           => {
 												     %common_style_attrs,
-												     'style'       => [],
+												     'style'        => [],
 												    },
-										'span'           => \%common_style_attrs,
+										'span'           => {
+												     %common_style_attrs,
+												     'bar_style'    => [], # WTSI extension
+												    },
 										'text'           => {
 												     %common_style_attrs,
-												     'font'        => [],
-												     'fontsize'    => [],
-												     'string'      => [],
-												     'style'       => [],
+												     'font'         => [],
+												     'fontsize'     => [],
+												     'string'       => [],
+												     'style'        => [],
 												    },
 										'primers'        => \%common_style_attrs,
 										'toomany'        => {
@@ -173,9 +181,9 @@ Bio::DasLite - Perl extension for the DAS (HTTP+XML) Protocol (http://biodas.org
   my $das = Bio::DasLite->new("http://das.ensembl.org/das/ensembl1834");
 
   my $das = Bio::DasLite->new({
-			       'timeout'    => 60,                                       # optional timeout in seconds
-                               'dsn'        => "http://das.ensembl.org/das/ensembl1834", # optional DSN (scalar, or arrayref)
-                               'http_proxy' => "http://webcache.local.com:3128",         # optional http proxy
+			       'timeout'    => 60,
+                               'dsn'        => 'http://user:pass@das.ensembl.org/das/ensembl1834',
+                               'http_proxy' => 'http://user:pass@webcache.local.com:3128/',
 			      });
 
  Options can be: dsn        (optional scalar or array ref, URLs of DAS services)
@@ -185,6 +193,9 @@ Bio::DasLite - Perl extension for the DAS (HTTP+XML) Protocol (http://biodas.org
                  callback   (optional code ref, callback for processed XML blocks)
                  registry   (optional array ref containing DAS registry service URLs
                              defaults to 'http://das.sanger.ac.uk/registry/services/das')
+                 proxy_user (optional scalar,   username for authenticating forward-proxy)
+                 proxy_pass (optional scalar,   password for authenticating forward-proxy)
+                 user_agent (optional scalar,   User-Agent HTTP request header value)
 
 =cut
 sub new {
@@ -201,7 +212,7 @@ sub new {
   bless $self, $class;
 
   if($ref && ref($ref)) {
-    for my $arg (qw(dsn timeout http_proxy caching callback registry)) {
+    for my $arg (qw(dsn timeout http_proxy caching callback registry proxy_user proxy_pass user_agent)) {
       $self->$arg($ref->{$arg}) if(defined $ref->{$arg} && $self->can($arg));
     }
   } elsif($ref) {
@@ -242,13 +253,66 @@ sub new_from_registry {
 
 =head2 http_proxy : Get/Set http_proxy
 
-    $das->http_proxy("http://squid.myco.com:3128/");
+    $das->http_proxy("http://user:pass@squid.myco.com:3128/");
 
 =cut
 sub http_proxy {
   my ($self, $proxy)    = @_;
   $self->{'http_proxy'} = $proxy if($proxy);
-  return $self->{'http_proxy'} || $ENV{'http_proxy'};
+
+  if(!$self->{'_checked_http_proxy_env'}) {
+    $self->{'http_proxy'} ||= $ENV{'http_proxy'} || "";
+    $self->{'_checked_http_proxy_env'} = 1;
+  }
+
+  if($self->{'http_proxy'} =~ m|^(https?://)(\S+):(.*?)\@(.*?)$|) {
+    #########
+    # http_proxy contains username & password - we'll set them up here:
+    #
+    $self->proxy_user($2);
+    $self->proxy_pass($3);
+
+    $self->{'http_proxy'} = "$1$4";
+  }
+
+  return $self->{'http_proxy'};
+}
+
+=head2 proxy_user : Get/Set proxy username for authenticating forward-proxies
+
+  This is only required if the username wasn't specified when setting http_proxy
+
+    $das->proxy_user("myusername");
+
+=cut
+sub proxy_user {
+  my ($self, $proxy_user) = @_;
+  $self->{'proxy_user'}   = $proxy_user if($proxy_user);
+  return $self->{'proxy_user'};
+}
+
+=head2 proxy_pass : Get/Set proxy password for authenticating forward-proxies
+
+  This is only required if the password wasn't specified when setting http_proxy
+
+    $das->proxy_pass("secretpassword");
+
+=cut
+sub proxy_pass {
+  my ($self, $proxy_pass) = @_;
+  $self->{'proxy_pass'}   = $proxy_pass if($proxy_pass);
+  return $self->{'proxy_pass'};
+}
+
+=head2 user_agent : Get/Set user-agent for request headers
+
+    $das->user_agent("GroovyDAS/1.0");
+
+=cut
+sub user_agent {
+  my ($self, $user_agent) = @_;
+  $self->{'user_agent'}   = $user_agent if($user_agent);
+  return $self->{'user_agent'} || "Bio::DasLite v$VERSION";
 }
 
 =head2 timeout : Get/Set timeout
@@ -309,7 +373,7 @@ sub basename {
 
   Or, if you want to add to the existing dsn list and you're feeling sneaky...
 
-  push $das->dsn, "http://my.server/das/additionalsource";
+  push @{$das->dsn}, "http://my.server/das/additionalsource";
 
 =cut
 sub dsn {
@@ -476,6 +540,7 @@ sub stylesheet {
 sub _generic_request {
   my ($self, $query, $fname, $opts) = @_;
   $opts       ||= {};
+  delete($self->{'currentsegs'});
   my $ref       = {};
   my $dsn       = $opts->{'use_basename'}?$self->basename():$self->dsn();
   my @bn        = @{$dsn};
@@ -521,12 +586,14 @@ sub _generic_request {
 	#
 	push @queries, map { "segment=$_"; } @{$query};
       }
+
     } else {
       #########
       # and if it wasn't a hashref or an arrayref, then assume it's a plain segment string
       #
       push @queries, "segment=$query";
     }
+
   } else {
     #########
     # Otherwise we've no idea what you're trying to do
@@ -552,7 +619,7 @@ sub _generic_request {
 	next;
       }
 
-      $results->{$request}           = [];
+      $results->{$request} = [];
 
       $ref->{$request}     = sub {
 	my $data                     = shift;
@@ -657,13 +724,18 @@ sub _fetch {
     next if(ref($url_ref->{$url}) ne "CODE");
     $DEBUG and print STDERR qq(Building HTTP::Request for $url [timeout=$self->{'timeout'}] via $url_ref->{$url}\n);
 
-    my $response = $self->{'ua'}->register(HTTP::Request->new('GET',
-							      $url,
-							      HTTP::Headers->new(%$headers)),
+    my $headers  = HTTP::Headers->new(%$headers);
+    $headers->user_agent($self->user_agent()) if($self->user_agent());
+
+    if($self->proxy_user() && $self->proxy_pass()) {
+      $headers->proxy_authorization_basic($self->proxy_user(), $self->proxy_pass());
+    }
+
+    my $response = $self->{'ua'}->register(HTTP::Request->new('GET', $url, $headers),
 					   $url_ref->{$url},
 					   $BLK_SIZE);
 
-    $self->{'statuscodes'}->{$url} ||= $response->status_line() if($response);
+     $self->{'statuscodes'}->{$url} ||= $response->status_line() if($response);
   }
 
   $DEBUG and print STDERR qq(Requests submitted. Waiting for content\n);
@@ -775,8 +847,8 @@ sub _parse_branch {
   #########
   # handle multiples of twig elements here
   #
-  my $linkre = qr!<link\s+href="([^"]+)"[^>]*?>([^<]*)</link>!;
-  my $notere = qr!<note[^>]*>([^<]*)</note>!;
+  my $linkre = qr!<link\s+href="([^"]+)"[^>]*?>([^<]*)</link>!i;
+  my $notere = qr!<note[^>]*>([^<]*)</note>!i;
   $blk       =~ s!$linkre!{
                            $ref->{'link'} ||= [];
 		           push @{$ref->{'link'}}, {
