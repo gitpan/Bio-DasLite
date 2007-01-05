@@ -1,5 +1,7 @@
 Revision history for Perl extension Bio::DasLite.
 
+1.39  Minor typographical tidying up, some more tests
+
 1.38  Minor tweaks to http_proxy - support for http://user:pass@proxy.example.com:nnnn/ format http_proxy
 
 1.33  Minor tweaks to proxy_* methods; Addition of configurable user_agent

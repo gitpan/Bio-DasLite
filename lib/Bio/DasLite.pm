@@ -3,7 +3,7 @@ package Bio::DasLite;
 # Author:        rmp@sanger.ac.uk
 # Maintainer:    rmp@sanger.ac.uk
 # Created:       2005-08-23
-# Last Modified: 2006-06-05
+# Last Modified: $Date: 2007/01/05 14:22:43 $ $Author: rmp $
 #
 use strict;
 use warnings;
@@ -13,7 +13,7 @@ use HTTP::Headers;
 use Data::Dumper;
 
 our $DEBUG    = 0;
-our $VERSION  = do { my @r = (q$Revision: 1.36 $ =~ /\d+/g); sprintf "%d."."%03d" x $#r, @r };
+our $VERSION  = do { my @r = (q$Revision: 1.39 $ =~ /\d+/g); sprintf '%d.'.'%03d' x $#r, @r };
 our $BLK_SIZE = 8192;
 our $TIMEOUT  = 5;
 our $MAX_REQ  = 5;
@@ -171,14 +171,14 @@ Bio::DasLite - Perl extension for the DAS (HTTP+XML) Protocol (http://biodas.org
 
   use Bio::DasLite;
   my $bdl     = Bio::DasLite->new_from_registry({'category' => 'Chromosome'});
-  my $results = $bdl->features("22");
+  my $results = $bdl->features('22');
 
 
 =head1 METHODS
 
 =head2 new : Constructor
 
-  my $das = Bio::DasLite->new("http://das.ensembl.org/das/ensembl1834");
+  my $das = Bio::DasLite->new('http://das.ensembl.org/das/ensembl1834');
 
   my $das = Bio::DasLite->new({
 			       'timeout'    => 60,
@@ -253,7 +253,7 @@ sub new_from_registry {
 
 =head2 http_proxy : Get/Set http_proxy
 
-    $das->http_proxy("http://user:pass@squid.myco.com:3128/");
+    $das->http_proxy('http://user:pass@squid.myco.com:3128/');
 
 =cut
 sub http_proxy {
@@ -282,7 +282,7 @@ sub http_proxy {
 
   This is only required if the username wasn't specified when setting http_proxy
 
-    $das->proxy_user("myusername");
+    $das->proxy_user('myusername');
 
 =cut
 sub proxy_user {
@@ -295,7 +295,7 @@ sub proxy_user {
 
   This is only required if the password wasn't specified when setting http_proxy
 
-    $das->proxy_pass("secretpassword");
+    $das->proxy_pass('secretpassword');
 
 =cut
 sub proxy_pass {
@@ -306,7 +306,7 @@ sub proxy_pass {
 
 =head2 user_agent : Get/Set user-agent for request headers
 
-    $das->user_agent("GroovyDAS/1.0");
+    $das->user_agent('GroovyDAS/1.0');
 
 =cut
 sub user_agent {
@@ -369,17 +369,17 @@ sub basename {
 
 =head2 dsn : Get/Set DSN
 
-  $das->dsn("http://das.ensembl.org/das/ensembl1834/"); # give dsn (scalar or arrayref) here if not specified in new()
+  $das->dsn('http://das.ensembl.org/das/ensembl1834/'); # give dsn (scalar or arrayref) here if not specified in new()
 
   Or, if you want to add to the existing dsn list and you're feeling sneaky...
 
-  push @{$das->dsn}, "http://my.server/das/additionalsource";
+  push @{$das->dsn}, 'http://my.server/das/additionalsource';
 
 =cut
 sub dsn {
   my ($self, $dsn) = @_;
   if($dsn) {
-    if(ref($dsn) eq "ARRAY") {
+    if(ref($dsn) eq 'ARRAY') {
       $self->{'dsn'} = $dsn;
     } else {
       $self->{'dsn'} = [$dsn];
@@ -417,25 +417,25 @@ sub entry_points {
 =head2 Types of argument for 'types', 'features', 'sequence' calls:
 
   Segment Id:
-  "1"
+  '1'
 
   Segment Id with range:
-  "1:1,1000"
+  '1:1,1000'
 
   Segment Id with range and type:
   {
-    'segment' => "1:1,1000",
+    'segment' => '1:1,1000',
     'type'    => 'exon',
   }
 
   Multiple Ids with ranges and types:
   [
     {
-      'segment' => "1:1,1000",
+      'segment' => '1:1,1000',
       'type'    => 'exon',
     },
     {
-      'segment' => "2:1,1000",
+      'segment' => '2:1,1000',
       'type'    => 'exon',
     },
   ]
@@ -464,16 +464,16 @@ sub types {
   #########
   # Different ways to fetch features -
   #
-  my $feature_data1 = $das->features("1:1,100000");
-  my $feature_data2 = $das->features(["1:1,100000", "2:20435000,21435000"]);
+  my $feature_data1 = $das->features('1:1,100000');
+  my $feature_data2 = $das->features(['1:1,100000', '2:20435000,21435000']);
   my $feature_data3 = $das->features({
-                                      'segment' => "1:1,1000",
-                                      'type'    => "karyotype",
+                                      'segment' => '1:1,1000',
+                                      'type'    => 'karyotype',
                                       # optional args - see DAS Spec
                                      });
   my $feature_data4 = $das->features([
-                                      {'segment' => "1:1,1000000",'type' => 'karyotype',},
-                                      {'segment' => "2:1,1000000",},
+                                      {'segment' => '1:1,1000000','type' => 'karyotype',},
+                                      {'segment' => '2:1,1000000',},
                                      ]);
 
   #########
@@ -485,18 +485,18 @@ sub types {
 	             };
   # then:
   $das->callback($callback);
-  $das->features("1:1,1000000");
+  $das->features('1:1,1000000');
 
   # or:
-  $das->features("1:1,1000000", $callback);
+  $das->features('1:1,1000000', $callback);
 
   # or:
-  $das->features(["1:1,1000000", "2:1,1000000", "3:1,1000000"], $callback);
+  $das->features(['1:1,1000000', '2:1,1000000', '3:1,1000000'], $callback);
 
 =cut
 sub features {
   my ($self, $query, $callback, $opts) = @_;
-  if(ref($callback) eq "HASH" && !defined($opts)) {
+  if(ref($callback) eq 'HASH' && !defined($opts)) {
     $opts = $callback;
     undef($callback);
   }
@@ -506,7 +506,7 @@ sub features {
 
 =head2 sequence : Retrieve sequence data for a segment (probably dna or protein)
 
-  my $sequence      = $das->sequence("2:1,1000"); # segment:start,stop (e.g. chromosome 2, bases 1 to 1000)
+  my $sequence      = $das->sequence('2:1,1000'); # segment:start,stop (e.g. chromosome 2, bases 1 to 1000)
 
 =cut
 sub sequence {
@@ -522,7 +522,7 @@ sub sequence {
 =cut
 sub stylesheet {
   my ($self, $callback, $opts) = @_;
-  if(ref($callback) eq "HASH" && !defined($opts)) {
+  if(ref($callback) eq 'HASH' && !defined($opts)) {
     $opts = $callback;
     undef($callback);
   }
@@ -552,18 +552,18 @@ sub _generic_request {
   my $attr      = $ATTR->{$fname};
 
   if($query) {
-    if(ref($query) eq "HASH") {
+    if(ref($query) eq 'HASH') {
       #########
       # If the query param was a hashref, stitch the parts together
       #
-      push @queries, join(";", map { "$_=$query->{$_}" } grep { $query->{$_} } @{$OPTS->{$fname}});
+      push @queries, join(';', map { "$_=$query->{$_}" } grep { $query->{$_} } @{$OPTS->{$fname}});
 
-    } elsif(ref($query) eq "ARRAY") {
+    } elsif(ref($query) eq 'ARRAY') {
       #########
       # If the query param was an arrayref
       #
 
-      if(ref($query->[-1]) eq "CODE") {
+      if(ref($query->[-1]) eq 'CODE') {
 	#########
 	# ... and the last arg is a code-block, set up the callback for this run and remove the arg
 	#
@@ -571,13 +571,13 @@ sub _generic_request {
 	pop @{$query};
       }
 
-      if(ref($query->[0]) eq "HASH") {
+      if(ref($query->[0]) eq 'HASH') {
 	#########
 	# ... or if the first array arg is a hash, stitch the series of queries together
 	#
 	push @queries, map {
 	  my $q = $_;
-	  join(";", map { "$_=$q->{$_}" } grep { $q->{$_} } @{$OPTS->{$fname}});
+	  join(';', map { "$_=$q->{$_}" } grep { $q->{$_} } @{$OPTS->{$fname}});
 	} @{$query};
 
       } else {
@@ -598,7 +598,7 @@ sub _generic_request {
     #########
     # Otherwise we've no idea what you're trying to do
     #
-    push @queries, "";
+    push @queries, '';
   }
 
   for my $bn (@bn) {
@@ -680,7 +680,7 @@ sub _generic_request {
   #########
   # minor tidy up for entry_points requests
   #
-  if($fname eq "entry_points") {
+  if($fname eq 'entry_points') {
     $DEBUG and print STDERR qq(Running postprocessing for entry_points\n);
     for my $s (keys %$results) {
       my $res = $results->{$s} || [];
@@ -721,7 +721,7 @@ sub _fetch {
   $headers->{'X-Forwarded-For'} ||= $ENV{'HTTP_X_FORWARDED_FOR'} if($ENV{'HTTP_X_FORWARDED_FOR'});
 
   for my $url (keys %$url_ref) {
-    next if(ref($url_ref->{$url}) ne "CODE");
+    next if(ref($url_ref->{$url}) ne 'CODE');
     $DEBUG and print STDERR qq(Building HTTP::Request for $url [timeout=$self->{'timeout'}] via $url_ref->{$url}\n);
 
     my $headers  = HTTP::Headers->new(%$headers);
@@ -748,9 +748,9 @@ sub _fetch {
   }
 
   for my $url (keys %$url_ref) {
-    next if(ref($url_ref->{$url}) ne "CODE");
+    next if(ref($url_ref->{$url}) ne 'CODE');
 
-    $self->{'statuscodes'}->{$url} ||= "200";
+    $self->{'statuscodes'}->{$url} ||= '200';
   }
 }
 
@@ -798,7 +798,7 @@ sub _parse_branch {
 
   my (@parts, @subparts);
   while(my ($k, $v) = each %$attr) {
-    if(ref($v) eq "HASH") {
+    if(ref($v) eq 'HASH') {
       push @subparts, $k;
     } else {
       push @parts, $k;
@@ -841,7 +841,7 @@ sub _parse_branch {
       $tmp         =~ s/^\s+$//smg;
       $ref->{$tag} = $tmp if(length $tmp);
     }
-    $DEBUG and print STDERR " "x($depth*2), qq(  $tag = $tmp\n) if($tmp);
+    $DEBUG and print STDERR ' 'x($depth*2), qq(  $tag = $tmp\n) if($tmp);
   }
 
   #########
@@ -855,12 +855,12 @@ sub _parse_branch {
 					            'href' => $1,
 					            'txt'  => $2,
 					           };
-		           ""
+		           ''
 		          }!smegi;
   $blk       =~ s!$notere!{
                            $ref->{'note'} ||= [];
 		           push @{$ref->{'note'}}, $1;
-			   ""
+			   ''
 			  }!smegi;
 
   if($addseginfo && $self->{'currentsegs'}->{$dsn}) {
@@ -870,19 +870,19 @@ sub _parse_branch {
   }
 
   push @{$ar_ref}, $ref;
-  $DEBUG and print STDERR " "x($depth*2), qq(leaving _parse_branch\n);
+  $DEBUG and print STDERR ' 'x($depth*2), qq(leaving _parse_branch\n);
 
   #########
   # only perform callbacks if we're at recursion depth zero
   #
   if($depth == 0 && $self->{'callback'}) {
-    $DEBUG and print STDERR " "x($depth*2), qq(executing callback at depth $depth\n);
+    $DEBUG and print STDERR ' 'x($depth*2), qq(executing callback at depth $depth\n);
     $ref->{'dsn'} = $dsn;
     my $callback  = $self->{'callback'};
     &$callback($ref);
   }
 
-  return "";
+  return '';
 }
 
 =head2 registry : Get/Set accessor for DAS-Registry service URLs
@@ -895,7 +895,7 @@ sub _parse_branch {
 sub registry {
   my ($self, @reg) = @_;
 
-  if((scalar @reg == 1) && ref($reg[0]) && ref($reg[0]) eq "ARRAY") {
+  if((scalar @reg == 1) && ref($reg[0]) && ref($reg[0]) eq 'ARRAY') {
     push @{$self->{'registry'}}, @{$reg[0]};
   } else {
     push @{$self->{'registry'}}, @reg;
@@ -925,7 +925,7 @@ sub registry_sources {
   $category        = [$category]   if(!ref($category));
   $capability      = [$capability] if(!ref($capability));
 
-  eval "require SOAP::Lite";
+  eval 'require SOAP::Lite';
   if($@) {
     warn qq(SOAP::Lite unavailable: $@);
     return [];
@@ -941,7 +941,7 @@ sub registry_sources {
       $soap->proxy($reg, proxy => ['http'=>$self->http_proxy()]) if($self->http_proxy());
       $DEBUG and print STDERR qq(Running request for $reg\n);
 
-      $SIG{ALRM} = sub { die "timeout"; };
+      $SIG{ALRM} = sub { die 'timeout'; };
       alarm($TIMEOUT);
       eval {
 	push @{$self->{'_registry_sources'}}, @{$soap->listServices()};
@@ -960,7 +960,7 @@ sub registry_sources {
   #########
   # Apply capability filter
   #
-  if((ref($capability) eq "ARRAY") && (scalar @$capability)) {
+  if((ref($capability) eq 'ARRAY') && (scalar @$capability)) {
     my $str    = join('|', @$capability);
     my $match  = qr/$str/;
     my $filter = sub {
@@ -976,7 +976,7 @@ sub registry_sources {
   #########
   # Apply coordinatesystem/category filter
   #
-  if((ref($category) eq "ARRAY") && (scalar @$category)) {
+  if((ref($category) eq 'ARRAY') && (scalar @$category)) {
     my $filter = sub {
       my ($src,$match) = @_;
       for my $scoord (@{$src->{'coordinateSystem'}}) {
